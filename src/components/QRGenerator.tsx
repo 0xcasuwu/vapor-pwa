@@ -6,13 +6,12 @@
  * - Auto-refresh on expiry
  * - Countdown timer
  * - Quantum security indicator
- * - Share via iMessage/WhatsApp/Telegram/etc
+ * - Share QR image via iMessage/WhatsApp/Telegram/etc
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { useSessionStore } from '../store/sessionStore';
-import { shareInvite, getShareButtonText } from '../utils/share';
 
 interface QRGeneratorProps {
   onCancel: () => void;
@@ -20,10 +19,9 @@ interface QRGeneratorProps {
 
 export function QRGenerator({ onCancel }: QRGeneratorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [shareStatus, setShareStatus] = useState<'idle' | 'shared' | 'copied' | 'error'>('idle');
+  const [shareStatus, setShareStatus] = useState<'idle' | 'shared' | 'saved' | 'error'>('idle');
   const {
     qrString,
-    compactShareString,
     qrExpirySeconds,
     isQuantumSecure,
     generateQR,
@@ -69,28 +67,86 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
     onCancel();
   };
 
+  /**
+   * Convert canvas to blob for sharing
+   */
+  const getQRImageBlob = useCallback(async (): Promise<Blob | null> => {
+    if (!canvasRef.current) return null;
+
+    return new Promise((resolve) => {
+      canvasRef.current!.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
+    });
+  }, []);
+
+  /**
+   * Share QR code image via Web Share API or download
+   */
   const handleShare = async () => {
-    // Use compact share string (classical only) for much shorter URLs
-    if (!compactShareString) return;
+    if (!qrString || !canvasRef.current) return;
 
-    const result = await shareInvite(compactShareString);
-
-    if (result.success) {
-      setShareStatus(result.method === 'share' ? 'shared' : 'copied');
-      // Reset status after 3 seconds
-      setTimeout(() => setShareStatus('idle'), 3000);
-    } else {
+    const blob = await getQRImageBlob();
+    if (!blob) {
       setShareStatus('error');
       setTimeout(() => setShareStatus('idle'), 3000);
+      return;
     }
+
+    // Create file for sharing
+    const file = new File([blob], 'vapor-invite.png', { type: 'image/png' });
+
+    // Try Web Share API with file (requires HTTPS and modern browser)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          title: 'Vapor - Secure Chat Invite',
+          text: 'Scan this QR code with Vapor to join my secure chat',
+          files: [file],
+        });
+        setShareStatus('shared');
+        setTimeout(() => setShareStatus('idle'), 3000);
+        return;
+      } catch (err) {
+        // User cancelled or share failed - fall through to download
+        if ((err as Error).name === 'AbortError') {
+          return; // User cancelled, don't show error
+        }
+        console.warn('Web Share failed, falling back to download:', err);
+      }
+    }
+
+    // Fallback: Download the image
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'vapor-invite.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setShareStatus('saved');
+    setTimeout(() => setShareStatus('idle'), 3000);
+  };
+
+  const getShareButtonText = () => {
+    // Check if Web Share API with files is supported
+    if (typeof navigator.canShare === 'function') {
+      const testFile = new File(['test'], 'test.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [testFile] })) {
+        return 'Share QR Code';
+      }
+    }
+    return 'Save QR Code';
   };
 
   const getStatusMessage = () => {
     switch (shareStatus) {
       case 'shared':
-        return 'Invite shared!';
-      case 'copied':
-        return 'Link copied to clipboard!';
+        return 'QR code shared!';
+      case 'saved':
+        return 'QR code saved!';
       case 'error':
         return 'Failed to share';
       default:
@@ -103,7 +159,7 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
       <div className="qr-header">
         <h2>Invite to Secure Chat</h2>
         <p className="qr-subtitle">
-          Share via message or have them scan the QR code
+          Share this QR code image via any messenger
         </p>
       </div>
 
@@ -136,7 +192,7 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
         <button
           className="btn-share"
           onClick={handleShare}
-          disabled={!compactShareString || shareStatus !== 'idle'}
+          disabled={!qrString || shareStatus !== 'idle'}
         >
           <ShareIcon />
           <span>{shareStatus === 'idle' ? getShareButtonText() : getStatusMessage()}</span>
@@ -145,9 +201,9 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
 
       <div className="qr-footer">
         <p className="qr-hint">
-          Send this invite via iMessage, WhatsApp, Telegram, or any messenger.
+          Send the QR image via iMessage, WhatsApp, Telegram, or any messenger.
           <br />
-          Your contact opens the link to join securely.
+          Your contact scans it with Vapor to join securely.
         </p>
       </div>
 

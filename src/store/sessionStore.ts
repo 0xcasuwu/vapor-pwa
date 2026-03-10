@@ -22,7 +22,6 @@ import type { HybridQRPayload } from '../crypto/HybridQRPayload';
 import {
   generateQRPayload,
   encodeToCompressedBase64,
-  encodeCompactSharePayload,
   decodeFromCompressedBase64,
   decodeFromBase64,
   isExpired,
@@ -57,7 +56,6 @@ interface SessionStore {
   messages: Message[];
   qrPayload: HybridQRPayload | null;
   qrString: string | null;
-  compactShareString: string | null; // Compact classical-only payload for sharing (~100 chars)
   qrExpirySeconds: number;
   connectionState: ConnectionState;
   isQuantumSecure: boolean;
@@ -92,7 +90,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   messages: [],
   qrPayload: null,
   qrString: null,
-  compactShareString: null,
   qrExpirySeconds: 60,
   connectionState: 'disconnected',
   isQuantumSecure: false,
@@ -115,18 +112,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Generate QR payload
       const payload = generateQRPayload(keyPair.publicKey);
 
-      // Encode for QR display (full hybrid payload)
+      // Encode for QR display (full hybrid payload with quantum-resistant keys)
       const qrString = encodeToCompressedBase64(payload);
-
-      // Encode compact version for share links (classical only, ~100 chars)
-      const compactShareString = encodeCompactSharePayload(payload);
 
       set({
         state: 'waiting',
         _keyPair: keyPair,
         qrPayload: payload,
         qrString,
-        compactShareString,
         qrExpirySeconds: 60,
         isQuantumSecure: true,
       });
