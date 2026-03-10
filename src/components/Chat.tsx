@@ -7,7 +7,8 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { useSessionStore, Message } from '../store/sessionStore';
+import { useSessionStore } from '../store/sessionStore';
+import type { Message } from '../store/sessionStore';
 
 interface ChatProps {
   onEndSession: () => void;

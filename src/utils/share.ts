@@ -117,7 +117,7 @@ function canUseWebShare(): boolean {
  * Get share button text based on platform
  */
 export function getShareButtonText(): string {
-  if (navigator.share && canUseWebShare()) {
+  if (typeof navigator.share === 'function' && canUseWebShare()) {
     return 'Share Invite';
   }
   return 'Copy Invite Link';

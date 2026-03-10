@@ -152,7 +152,8 @@ export class WebRTCChannel {
     }
 
     try {
-      this.dc.send(data);
+      // Create a clean ArrayBuffer copy to satisfy TypeScript
+      this.dc.send(new Uint8Array(data).buffer);
       return true;
     } catch (error) {
       console.error('Failed to send message:', error);

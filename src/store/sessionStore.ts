@@ -16,9 +16,7 @@ import type { HybridKeyPairData } from '../crypto/HybridKeyPair';
 import {
   generateHybridKeyPair,
   deriveSharedSecretAsInitiator,
-  deriveSharedSecretAsResponder,
   destroyKeyPair,
-  getCombinedPublicKey,
 } from '../crypto/HybridKeyPair';
 import type { HybridQRPayload } from '../crypto/HybridQRPayload';
 import {
@@ -30,7 +28,6 @@ import {
   isValid,
   isHybrid,
   getRemainingSeconds,
-  getCombinedPublicKeyFromPayload,
 } from '../crypto/HybridQRPayload';
 import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
 import type { ConnectionState } from '../crypto/WebRTCChannel';
@@ -400,8 +397,3 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     await webrtc.addIceCandidate(candidateJson);
   },
 }));
-
-// Type augmentation for internal methods
-declare module 'zustand' {
-  interface StoreMutatorIdentifier {}
-}

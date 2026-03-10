@@ -201,21 +201,25 @@ async function hkdf(
   const encoder = new TextEncoder();
   const infoBytes = encoder.encode(info);
 
-  // Import IKM as raw key material
+  // Import IKM as raw key material - use slice to get clean ArrayBuffer
+  const ikmBuffer = new Uint8Array(ikm).buffer;
   const baseKey = await crypto.subtle.importKey(
     'raw',
-    ikm,
+    ikmBuffer,
     'HKDF',
     false,
     ['deriveBits']
   );
 
   // Derive key material
+  const saltBuffer = salt.length > 0
+    ? new Uint8Array(salt).buffer
+    : new ArrayBuffer(32);
   const derivedBits = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: salt.length > 0 ? salt : new Uint8Array(32),
+      salt: saltBuffer,
       info: infoBytes,
     },
     baseKey,

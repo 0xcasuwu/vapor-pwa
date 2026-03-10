@@ -7,7 +7,8 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Scanner, IDetectedBarcode } from '@yudiel/react-qr-scanner';
+import { Scanner } from '@yudiel/react-qr-scanner';
+import type { IDetectedBarcode } from '@yudiel/react-qr-scanner';
 import { useSessionStore } from '../store/sessionStore';
 
 interface QRScannerProps {

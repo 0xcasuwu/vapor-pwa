@@ -18,7 +18,7 @@ type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
-  const [error, setError] = useState<string | null>(null);
+  const [error, _setError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   // Check for incoming invite link on mount
