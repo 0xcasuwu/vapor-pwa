@@ -32,8 +32,12 @@ export function QRScanner({ onCancel, onScanned }: QRScannerProps) {
 
     try {
       const result = await scanQR(qrData);
-      if (result?.offer) {
-        onScanned(result.offer);
+      if (result && 'offerQr' in result) {
+        // Successfully scanned initial QR, got offer QR string
+        onScanned(result.offerQr);
+      } else if (result && 'needsAnswerScan' in result) {
+        // Scanned signaling QR, state machine handles next step
+        onScanned('signaling');
       } else {
         setError('Failed to process QR code');
         setScanning(true);

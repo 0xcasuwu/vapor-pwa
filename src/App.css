@@ -1262,6 +1262,167 @@ body {
 }
 
 /* ============================================
+   INITIATOR & RESPONDER FLOW
+   ============================================ */
+.initiator-flow,
+.responder-flow {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.initiator-flow .qr-header,
+.responder-flow .qr-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.initiator-flow .qr-header h2,
+.responder-flow .qr-header h2 {
+  font-size: 1.25rem;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  color: var(--neon-cyan);
+  text-shadow: var(--glow-text-cyan);
+  margin-bottom: 8px;
+}
+
+.initiator-flow .qr-subtitle,
+.responder-flow .qr-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+}
+
+/* Flow actions - centered buttons */
+.flow-actions {
+  width: 100%;
+  max-width: 280px;
+  margin-bottom: 24px;
+}
+
+.flow-actions .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, rgba(255, 0, 170, 0.15), rgba(0, 255, 242, 0.1));
+  border: 1px solid var(--neon-pink);
+  border-radius: var(--radius-md);
+  color: var(--neon-pink);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 20px rgba(255, 0, 170, 0.2);
+}
+
+.flow-actions .btn-primary:hover {
+  box-shadow: var(--glow-pink);
+  transform: translateY(-2px);
+}
+
+/* Secondary button style */
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: transparent;
+  border: 1px solid var(--color-border-glow);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+}
+
+.btn-secondary:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 15px rgba(0, 255, 242, 0.2);
+}
+
+/* Signaling badge */
+.signaling-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(0, 136, 255, 0.1);
+  border: 1px solid rgba(0, 136, 255, 0.3);
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  color: var(--neon-blue);
+  text-shadow: 0 0 10px rgba(0, 136, 255, 0.5);
+  margin-bottom: 16px;
+}
+
+/* Connecting state */
+.connecting-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  gap: 24px;
+  text-align: center;
+}
+
+.connecting-state h2 {
+  font-size: 1rem;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  color: var(--neon-cyan);
+  text-shadow: var(--glow-text-cyan);
+}
+
+.connecting-state p {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+/* QR Loading with spinner */
+.qr-loading {
+  width: 280px;
+  height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+}
+
+/* ============================================
+   SIGNALING QR DISPLAY
+   ============================================ */
+.signaling-qr {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 @media (min-width: 768px) {
@@ -1275,5 +1436,11 @@ body {
 
   .title-en {
     font-size: 4rem;
+  }
+
+  .initiator-flow,
+  .responder-flow,
+  .signaling-qr {
+    padding: 48px;
   }
 }

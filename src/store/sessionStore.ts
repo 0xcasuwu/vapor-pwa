@@ -7,8 +7,15 @@
  * - Key pair generation
  * - QR payload management
  * - Key exchange (hybrid X25519 + ML-KEM-768)
+ * - Two-way QR signaling for WebRTC
  * - Message encryption/decryption
  * - Session destruction
+ *
+ * Two-Way QR Flow:
+ * 1. Alice generates initial QR (public keys)
+ * 2. Bob scans, creates offer QR (WebRTC offer + KEM ciphertext)
+ * 3. Alice scans offer QR, creates answer QR (WebRTC answer)
+ * 4. Bob scans answer QR, connection established
  */
 
 import { create } from 'zustand';
@@ -16,6 +23,7 @@ import type { HybridKeyPairData } from '../crypto/HybridKeyPair';
 import {
   generateHybridKeyPair,
   deriveSharedSecretAsInitiator,
+  deriveSharedSecretAsResponder,
   destroyKeyPair,
 } from '../crypto/HybridKeyPair';
 import type { HybridQRPayload } from '../crypto/HybridQRPayload';
@@ -29,6 +37,17 @@ import {
   isHybrid,
   getRemainingSeconds,
 } from '../crypto/HybridQRPayload';
+import {
+  createSignalingOffer,
+  createSignalingAnswer,
+  encodeSignalingPayload,
+  decodeSignalingPayload,
+  isSignalingPayload,
+  isValidSignalingPayload,
+  isSignalingExpired,
+  SIGNALING_TYPE,
+} from '../crypto/SignalingPayload';
+import type { SignalingOffer, SignalingAnswer } from '../crypto/SignalingPayload';
 import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
 import type { ConnectionState } from '../crypto/WebRTCChannel';
 import { WebRTCChannel } from '../crypto/WebRTCChannel';
@@ -41,21 +60,29 @@ export interface Message {
 }
 
 export type SessionState =
-  | 'idle'           // No session
-  | 'generating'     // Generating QR code
-  | 'waiting'        // Showing QR, waiting for scan
-  | 'scanning'       // Scanning peer's QR
-  | 'connecting'     // WebRTC connecting
-  | 'active'         // Session established
-  | 'error';         // Error state
+  | 'idle'                  // No session
+  | 'generating'            // Generating initial QR code
+  | 'waiting'               // Showing initial QR, waiting for scan
+  | 'scanning'              // Scanning peer's QR
+  | 'showing_offer'         // Bob: Showing offer QR for Alice to scan
+  | 'waiting_for_answer'    // Bob: Waiting to scan Alice's answer QR
+  | 'showing_answer'        // Alice: Showing answer QR for Bob to scan
+  | 'connecting'            // WebRTC handshake in progress
+  | 'active'                // Session established
+  | 'error';                // Error state
+
+// Role in the handshake
+export type HandshakeRole = 'initiator' | 'responder' | null;
 
 interface SessionStore {
   // State
   state: SessionState;
+  role: HandshakeRole;
   error: string | null;
   messages: Message[];
   qrPayload: HybridQRPayload | null;
   qrString: string | null;
+  signalingQrString: string | null;  // QR string for offer/answer
   qrExpirySeconds: number;
   connectionState: ConnectionState;
   isQuantumSecure: boolean;
@@ -65,16 +92,21 @@ interface SessionStore {
   _sessionKey: Uint8Array | null;
   _webrtc: WebRTCChannel | null;
   _consumedNonces: Set<string>;
+  _pendingKemCiphertext: Uint8Array | null;  // Store ciphertext when creating offer
 
   // Actions
   generateQR: () => Promise<void>;
-  scanQR: (qrString: string) => Promise<{ offer: string } | null>;
-  completeSession: (answerJson: string) => Promise<void>;
+  scanQR: (qrString: string) => Promise<{ offerQr: string } | { needsAnswerScan: true } | null>;
   sendMessage: (content: string) => Promise<boolean>;
   destroySession: () => void;
   updateQRExpiry: () => void;
 
-  // WebRTC signaling
+  // Two-way QR signaling actions
+  processOfferQR: (qrString: string) => Promise<{ answerQr: string } | null>;
+  processAnswerQR: (qrString: string) => Promise<boolean>;
+
+  // Legacy (kept for compatibility)
+  completeSession: (answerJson: string) => Promise<void>;
   getWebRTCOffer: () => Promise<string | null>;
   handleWebRTCAnswer: (answerJson: string) => Promise<void>;
   handleICECandidate: (candidateJson: string) => Promise<void>;
@@ -86,10 +118,12 @@ interface SessionStore {
 export const useSessionStore = create<SessionStore>((set, get) => ({
   // Initial state
   state: 'idle',
+  role: null,
   error: null,
   messages: [],
   qrPayload: null,
   qrString: null,
+  signalingQrString: null,
   qrExpirySeconds: 60,
   connectionState: 'disconnected',
   isQuantumSecure: false,
@@ -98,12 +132,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   _sessionKey: null,
   _webrtc: null,
   _consumedNonces: new Set(),
+  _pendingKemCiphertext: null,
 
   /**
-   * Generate a new QR code for session initiation
+   * Generate a new QR code for session initiation (Alice's role)
+   * Alice shows this QR, Bob scans it
    */
   generateQR: async () => {
-    set({ state: 'generating', error: null });
+    set({ state: 'generating', error: null, role: 'initiator' });
 
     try {
       // Generate hybrid key pair
@@ -117,9 +153,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       set({
         state: 'waiting',
+        role: 'initiator',
         _keyPair: keyPair,
         qrPayload: payload,
         qrString,
+        signalingQrString: null,
         qrExpirySeconds: 60,
         isQuantumSecure: true,
       });
@@ -132,14 +170,47 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
-   * Process a scanned QR code and initiate key exchange
-   * Returns WebRTC offer if successful
+   * Process a scanned QR code - handles both initial key exchange QR and signaling QRs
+   *
+   * Flow depends on QR type:
+   * - Initial QR (public keys): Bob scans Alice's QR → returns offer QR string
+   * - Offer QR (signaling): Alice scans Bob's offer → returns { needsAnswerScan: true }
+   * - Answer QR (signaling): Bob scans Alice's answer → connection completes
    */
   scanQR: async (qrString: string) => {
     set({ state: 'scanning', error: null });
 
     try {
-      // Try compressed first, then uncompressed
+      // Check if this is a signaling payload (offer or answer)
+      if (isSignalingPayload(qrString)) {
+        const signalingPayload = decodeSignalingPayload(qrString);
+
+        if (!signalingPayload) {
+          throw new Error('Invalid signaling QR');
+        }
+
+        if (isSignalingExpired(signalingPayload)) {
+          throw new Error('Signaling QR has expired');
+        }
+
+        if (signalingPayload.type === SIGNALING_TYPE.OFFER) {
+          // Alice is scanning Bob's offer QR
+          const result = await get().processOfferQR(qrString);
+          if (result) {
+            return { needsAnswerScan: true as const };
+          }
+          return null;
+        } else if (signalingPayload.type === SIGNALING_TYPE.ANSWER) {
+          // Bob is scanning Alice's answer QR
+          const success = await get().processAnswerQR(qrString);
+          if (success) {
+            return { needsAnswerScan: true as const };
+          }
+          return null;
+        }
+      }
+
+      // This is an initial key exchange QR (public keys)
       const payload = decodeFromCompressedBase64(qrString) || decodeFromBase64(qrString);
 
       if (!payload) {
@@ -163,35 +234,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         throw new Error('QR code already used');
       }
 
-      // Generate our key pair
+      // Generate our key pair (Bob's)
       const ourKeyPair = await generateHybridKeyPair();
 
-      let sessionKey: Uint8Array;
-
-      if (isHybrid(payload)) {
-        // Hybrid (post-quantum) mode
-        const result = await deriveSharedSecretAsInitiator(
-          ourKeyPair.privateKey,
-          { classical: payload.classicalPublicKey, pq: payload.pqPublicKey }
-        );
-        sessionKey = result.sharedSecret;
-
-        // Store ciphertext for response
-        // (In full implementation, this would be sent via signaling)
-        set({ isQuantumSecure: true });
-      } else {
-        // Legacy mode - just use classical ECDH
-        // Note: This path should rarely be used in PWA-to-PWA communication
-        throw new Error('Legacy mode not fully supported in PWA');
+      if (!isHybrid(payload)) {
+        throw new Error('Legacy mode not supported in PWA');
       }
+
+      // Hybrid (post-quantum) mode - Bob encapsulates
+      const result = await deriveSharedSecretAsInitiator(
+        ourKeyPair.privateKey,
+        { classical: payload.classicalPublicKey, pq: payload.pqPublicKey }
+      );
 
       // Mark nonce as consumed
       get()._consumedNonces.add(nonceHex);
 
-      // Initialize WebRTC
+      // Initialize WebRTC as initiator (Bob creates the offer)
       const webrtc = new WebRTCChannel({
         onMessage: (data) => {
-          // Decrypt and add to messages
           get()._handleIncomingMessage(data);
         },
         onStateChange: (state) => {
@@ -203,20 +264,34 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           }
         },
         onSignalingData: () => {
-          // ICE candidates are handled via the signaling channel
+          // ICE candidates handled in signaling QR
         },
       });
 
-      const offer = await webrtc.initAsInitiator();
+      // Create WebRTC offer
+      const offerJson = await webrtc.initAsInitiator();
+      const offerData = JSON.parse(offerJson);
+
+      // Create signaling offer payload with KEM ciphertext and our classical public key
+      const signalingOffer = createSignalingOffer(
+        offerData.sdp,
+        result.ciphertext,
+        ourKeyPair.publicKey.classical
+      );
+
+      const offerQr = encodeSignalingPayload(signalingOffer);
 
       set({
-        state: 'connecting',
+        state: 'showing_offer',
+        role: 'responder',
         _keyPair: ourKeyPair,
-        _sessionKey: sessionKey,
+        _sessionKey: result.sharedSecret,
         _webrtc: webrtc,
+        signalingQrString: offerQr,
+        isQuantumSecure: true,
       });
 
-      return { offer };
+      return { offerQr };
     } catch (error) {
       set({
         state: 'error',
@@ -227,7 +302,122 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
-   * Complete session after receiving WebRTC answer
+   * Process offer QR code (Alice scanning Bob's offer)
+   * Alice receives Bob's WebRTC offer + KEM ciphertext, creates answer QR
+   */
+  processOfferQR: async (qrString: string) => {
+    const keyPair = get()._keyPair;
+
+    if (!keyPair) {
+      set({ state: 'error', error: 'No key pair - generate QR first' });
+      return null;
+    }
+
+    try {
+      const payload = decodeSignalingPayload(qrString) as SignalingOffer;
+
+      if (!payload || payload.type !== SIGNALING_TYPE.OFFER) {
+        throw new Error('Invalid offer QR');
+      }
+
+      if (!isValidSignalingPayload(payload)) {
+        throw new Error('Invalid offer payload structure');
+      }
+
+      if (isSignalingExpired(payload)) {
+        throw new Error('Offer has expired');
+      }
+
+      // Alice decapsulates using Bob's KEM ciphertext
+      const sessionKey = await deriveSharedSecretAsResponder(
+        keyPair,
+        payload.classicalPublicKey,
+        payload.kemCiphertext
+      );
+
+      // Initialize WebRTC as responder
+      const webrtc = new WebRTCChannel({
+        onMessage: (data) => {
+          get()._handleIncomingMessage(data);
+        },
+        onStateChange: (state) => {
+          set({ connectionState: state });
+          if (state === 'connected') {
+            set({ state: 'active' });
+          } else if (state === 'failed') {
+            set({ state: 'error', error: 'Connection failed' });
+          }
+        },
+        onSignalingData: () => {},
+      });
+
+      // Create answer from offer
+      const offerJson = JSON.stringify({ type: 'offer', sdp: payload.sdp });
+      const answerJson = await webrtc.initAsResponder(offerJson);
+      const answerData = JSON.parse(answerJson);
+
+      // Create signaling answer payload
+      const signalingAnswer = createSignalingAnswer(answerData.sdp);
+      const answerQr = encodeSignalingPayload(signalingAnswer);
+
+      set({
+        state: 'showing_answer',
+        _sessionKey: sessionKey,
+        _webrtc: webrtc,
+        signalingQrString: answerQr,
+        isQuantumSecure: true,
+      });
+
+      return { answerQr };
+    } catch (error) {
+      set({
+        state: 'error',
+        error: error instanceof Error ? error.message : 'Failed to process offer',
+      });
+      return null;
+    }
+  },
+
+  /**
+   * Process answer QR code (Bob scanning Alice's answer)
+   * Bob receives Alice's WebRTC answer, completes connection
+   */
+  processAnswerQR: async (qrString: string) => {
+    const webrtc = get()._webrtc;
+
+    if (!webrtc) {
+      set({ state: 'error', error: 'No WebRTC connection' });
+      return false;
+    }
+
+    try {
+      const payload = decodeSignalingPayload(qrString) as SignalingAnswer;
+
+      if (!payload || payload.type !== SIGNALING_TYPE.ANSWER) {
+        throw new Error('Invalid answer QR');
+      }
+
+      if (isSignalingExpired(payload)) {
+        throw new Error('Answer has expired');
+      }
+
+      // Complete WebRTC connection with answer
+      const answerJson = JSON.stringify({ type: 'answer', sdp: payload.sdp });
+      await webrtc.completeConnection(answerJson);
+
+      set({ state: 'connecting' });
+      return true;
+    } catch (error) {
+      set({
+        state: 'error',
+        error: error instanceof Error ? error.message : 'Failed to process answer',
+      });
+      return false;
+    }
+  },
+
+  /**
+   * Complete session after receiving WebRTC answer (legacy method)
    */
   completeSession: async (answerJson: string) => {
     const webrtc = get()._webrtc;
@@ -334,16 +524,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Reset state
     set({
       state: 'idle',
+      role: null,
       error: null,
       messages: [],
       qrPayload: null,
       qrString: null,
+      signalingQrString: null,
       qrExpirySeconds: 60,
       connectionState: 'disconnected',
       isQuantumSecure: false,
       _keyPair: null,
       _sessionKey: null,
       _webrtc: null,
+      _pendingKemCiphertext: null,
     });
   },
 

@@ -6,3 +6,4 @@
 export * from './HybridKeyPair';
 export * from './HybridQRPayload';
 export * from './Encryption';
+export * from './SignalingPayload';

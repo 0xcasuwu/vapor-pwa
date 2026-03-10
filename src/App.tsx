@@ -2,24 +2,45 @@
  * App.tsx
  * Vapor PWA - Main Application Component
  *
- * Manages the main application flow:
- * - Home -> Generate QR / Scan QR
- * - Handle incoming invite links
- * - Session establishment
- * - Chat interface
+ * Manages the main application flow with two-way QR handshake:
+ *
+ * Flow:
+ * 1. Alice: generate -> waiting (shows initial QR)
+ * 2. Bob: scan -> showing_offer (scans Alice's QR, shows offer QR)
+ * 3. Alice: scan -> showing_answer (scans Bob's offer, shows answer QR)
+ * 4. Bob: scan -> connecting -> active (scans Alice's answer)
+ * 5. Both: chat
  */
 
 import { useState, useEffect } from 'react';
 import { Home } from './components/Home';
+import { useSessionStore } from './store/sessionStore';
 import { parseInviteFromUrl, clearInviteFromUrl } from './utils/share';
 import './App.css';
 
-type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining';
+type Screen = 'home' | 'generate' | 'scan' | 'showing_offer' | 'showing_answer' | 'chat' | 'joining';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
-  const [error, _setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+
+  const { state: sessionState } = useSessionStore();
+
+  // Watch session state changes to update screen
+  useEffect(() => {
+    if (sessionState === 'showing_offer') {
+      setScreen('showing_offer');
+    } else if (sessionState === 'showing_answer') {
+      setScreen('showing_answer');
+    } else if (sessionState === 'active') {
+      setScreen('chat');
+    } else if (sessionState === 'error') {
+      // Stay on current screen but show error
+      const { error: sessionError } = useSessionStore.getState();
+      setError(sessionError);
+    }
+  }, [sessionState]);
 
   // Check for incoming invite link on mount
   useEffect(() => {
@@ -30,7 +51,6 @@ function App() {
       clearInviteFromUrl();
     }
 
-    // Also listen for hash changes (in case user clicks link while app is open)
     const handleHashChange = () => {
       const newInvite = parseInviteFromUrl();
       if (newInvite) {
@@ -55,22 +75,30 @@ function App() {
   const handleCancel = () => {
     setScreen('home');
     setPendingInvite(null);
-  };
-
-  const handleScanned = (_offer: string) => {
-    console.log('QR scanned, WebRTC offer generated');
+    setError(null);
   };
 
   const handleEndSession = () => {
     setScreen('home');
+    setError(null);
   };
 
   const handleJoinComplete = () => {
-    // After joining, we would typically go to chat
-    // For now, just go home since WebRTC handshake needs signaling server
     setScreen('home');
     setPendingInvite(null);
   };
+
+  const handleConnectionComplete = () => {
+    setScreen('chat');
+  };
+
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   return (
     <div className="app">
@@ -79,11 +107,27 @@ function App() {
       )}
 
       {screen === 'generate' && (
-        <DynamicQRGenerator onCancel={handleCancel} />
+        <DynamicInitiatorFlow onCancel={handleCancel} onComplete={handleConnectionComplete} />
       )}
 
       {screen === 'scan' && (
-        <DynamicQRScanner onCancel={handleCancel} onScanned={handleScanned} />
+        <DynamicResponderFlow onCancel={handleCancel} onComplete={handleConnectionComplete} />
+      )}
+
+      {screen === 'showing_offer' && (
+        <DynamicSignalingQR
+          type="offer"
+          onCancel={handleCancel}
+          onComplete={handleConnectionComplete}
+        />
+      )}
+
+      {screen === 'showing_answer' && (
+        <DynamicSignalingQR
+          type="answer"
+          onCancel={handleCancel}
+          onComplete={handleConnectionComplete}
+        />
       )}
 
       {screen === 'chat' && (
@@ -230,33 +274,74 @@ function JoinFromInvite({
 /**
  * Dynamic imports for components that use crypto
  */
-function DynamicQRGenerator({ onCancel }: { onCancel: () => void }) {
-  const [Component, setComponent] = useState<React.ComponentType<{ onCancel: () => void }> | null>(null);
+
+/**
+ * Initiator flow - Alice generates QR, waits for Bob to scan, then scans Bob's offer
+ */
+function DynamicInitiatorFlow({ onCancel, onComplete }: { onCancel: () => void; onComplete: () => void }) {
+  const [Component, setComponent] = useState<React.ComponentType<{
+    onCancel: () => void;
+    onComplete: () => void;
+  }> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    import('./components/QRGenerator')
-      .then(m => setComponent(() => m.QRGenerator))
+    import('./components/InitiatorFlow')
+      .then(m => setComponent(() => m.InitiatorFlow))
       .catch(err => {
-        console.error('Failed to load QRGenerator:', err);
+        console.error('Failed to load InitiatorFlow:', err);
         setError(err.message || 'Failed to load');
       });
   }, []);
 
   if (error) return <div className="loading">Error: {error}</div>;
   if (!Component) return <div className="loading">Loading...</div>;
-  return <Component onCancel={onCancel} />;
+  return <Component onCancel={onCancel} onComplete={onComplete} />;
 }
 
-function DynamicQRScanner({ onCancel, onScanned }: { onCancel: () => void; onScanned: (offer: string) => void }) {
-  const [Component, setComponent] = useState<React.ComponentType<{ onCancel: () => void; onScanned: (offer: string) => void }> | null>(null);
+/**
+ * Responder flow - Bob scans Alice's QR, shows offer QR, then scans Alice's answer
+ */
+function DynamicResponderFlow({ onCancel, onComplete }: { onCancel: () => void; onComplete: () => void }) {
+  const [Component, setComponent] = useState<React.ComponentType<{
+    onCancel: () => void;
+    onComplete: () => void;
+  }> | null>(null);
 
   useEffect(() => {
-    import('./components/QRScanner').then(m => setComponent(() => m.QRScanner));
+    import('./components/ResponderFlow')
+      .then(m => setComponent(() => m.ResponderFlow));
   }, []);
 
   if (!Component) return <div className="loading">Loading...</div>;
-  return <Component onCancel={onCancel} onScanned={onScanned} />;
+  return <Component onCancel={onCancel} onComplete={onComplete} />;
+}
+
+/**
+ * Signaling QR display (offer or answer)
+ */
+function DynamicSignalingQR({
+  type,
+  onCancel,
+  onComplete,
+}: {
+  type: 'offer' | 'answer';
+  onCancel: () => void;
+  onComplete: () => void;
+}) {
+  const [Component, setComponent] = useState<React.ComponentType<{
+    type: 'offer' | 'answer';
+    onCancel: () => void;
+    onComplete: () => void;
+  }> | null>(null);
+
+  useEffect(() => {
+    import('./components/SignalingQRDisplay')
+      .then(m => setComponent(() => m.SignalingQRDisplay));
+  }, []);
+
+  if (!Component) return <div className="loading">Loading...</div>;
+  return <Component type={type} onCancel={onCancel} onComplete={onComplete} />;
 }
 
 function DynamicChat({ onEndSession }: { onEndSession: () => void }) {
