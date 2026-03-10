@@ -232,11 +232,18 @@ function JoinFromInvite({
  */
 function DynamicQRGenerator({ onCancel }: { onCancel: () => void }) {
   const [Component, setComponent] = useState<React.ComponentType<{ onCancel: () => void }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    import('./components/QRGenerator').then(m => setComponent(() => m.QRGenerator));
+    import('./components/QRGenerator')
+      .then(m => setComponent(() => m.QRGenerator))
+      .catch(err => {
+        console.error('Failed to load QRGenerator:', err);
+        setError(err.message || 'Failed to load');
+      });
   }, []);
 
+  if (error) return <div className="loading">Error: {error}</div>;
   if (!Component) return <div className="loading">Loading...</div>;
   return <Component onCancel={onCancel} />;
 }
