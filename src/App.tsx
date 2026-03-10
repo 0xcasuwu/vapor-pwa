@@ -288,23 +288,36 @@ function DynamicResponderFlow({ onCancel, onComplete }: { onCancel: () => void; 
     onCancel: () => void;
     onComplete: () => void;
   }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     import('./components/ResponderFlow')
-      .then(m => setComponent(() => m.ResponderFlow));
+      .then(m => setComponent(() => m.ResponderFlow))
+      .catch(err => {
+        console.error('Failed to load ResponderFlow:', err);
+        setError(err.message || 'Failed to load');
+      });
   }, []);
 
+  if (error) return <div className="loading">Error: {error}</div>;
   if (!Component) return <div className="loading">Loading...</div>;
   return <Component onCancel={onCancel} onComplete={onComplete} />;
 }
 
 function DynamicChat({ onEndSession }: { onEndSession: () => void }) {
   const [Component, setComponent] = useState<React.ComponentType<{ onEndSession: () => void }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    import('./components/Chat').then(m => setComponent(() => m.Chat));
+    import('./components/Chat')
+      .then(m => setComponent(() => m.Chat))
+      .catch(err => {
+        console.error('Failed to load Chat:', err);
+        setError(err.message || 'Failed to load');
+      });
   }, []);
 
+  if (error) return <div className="loading">Error: {error}</div>;
   if (!Component) return <div className="loading">Loading...</div>;
   return <Component onEndSession={onEndSession} />;
 }
