@@ -6,11 +6,13 @@
  * - Auto-refresh on expiry
  * - Countdown timer
  * - Quantum security indicator
+ * - Share via iMessage/WhatsApp/Telegram/etc
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { useSessionStore } from '../store/sessionStore';
+import { shareInvite, getShareButtonText } from '../utils/share';
 
 interface QRGeneratorProps {
   onCancel: () => void;
@@ -18,6 +20,7 @@ interface QRGeneratorProps {
 
 export function QRGenerator({ onCancel }: QRGeneratorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [shareStatus, setShareStatus] = useState<'idle' | 'shared' | 'copied' | 'error'>('idle');
   const {
     qrString,
     qrExpirySeconds,
@@ -65,12 +68,40 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
     onCancel();
   };
 
+  const handleShare = async () => {
+    if (!qrString) return;
+
+    const result = await shareInvite(qrString);
+
+    if (result.success) {
+      setShareStatus(result.method === 'share' ? 'shared' : 'copied');
+      // Reset status after 3 seconds
+      setTimeout(() => setShareStatus('idle'), 3000);
+    } else {
+      setShareStatus('error');
+      setTimeout(() => setShareStatus('idle'), 3000);
+    }
+  };
+
+  const getStatusMessage = () => {
+    switch (shareStatus) {
+      case 'shared':
+        return 'Invite shared!';
+      case 'copied':
+        return 'Link copied to clipboard!';
+      case 'error':
+        return 'Failed to share';
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="qr-generator">
       <div className="qr-header">
-        <h2>Share This QR Code</h2>
+        <h2>Invite to Secure Chat</h2>
         <p className="qr-subtitle">
-          Have your contact scan this code to start a secure session
+          Share via message or have them scan the QR code
         </p>
       </div>
 
@@ -84,7 +115,7 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
 
       <div className="qr-info">
         <div className="qr-timer">
-          <span className="timer-icon">⏱</span>
+          <span className="timer-icon">~</span>
           <span className="timer-text">
             Expires in {qrExpirySeconds}s
           </span>
@@ -92,17 +123,29 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
 
         {isQuantumSecure && (
           <div className="quantum-badge">
-            <span className="quantum-icon">🛡</span>
+            <span className="quantum-icon">*</span>
             <span className="quantum-text">Quantum-Resistant</span>
           </div>
         )}
       </div>
 
+      {/* Share Button - Primary Action */}
+      <div className="share-actions">
+        <button
+          className="btn-share"
+          onClick={handleShare}
+          disabled={!qrString || shareStatus !== 'idle'}
+        >
+          <ShareIcon />
+          <span>{shareStatus === 'idle' ? getShareButtonText() : getStatusMessage()}</span>
+        </button>
+      </div>
+
       <div className="qr-footer">
         <p className="qr-hint">
-          This QR contains your public key (X25519 + ML-KEM-768).
+          Send this invite via iMessage, WhatsApp, Telegram, or any messenger.
           <br />
-          No private data is shared.
+          Your contact opens the link to join securely.
         </p>
       </div>
 
@@ -110,5 +153,24 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
         Cancel
       </button>
     </div>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
   );
 }

@@ -12,14 +12,15 @@
  */
 
 import { create } from 'zustand';
+import type { HybridKeyPairData } from '../crypto/HybridKeyPair';
 import {
   generateHybridKeyPair,
   deriveSharedSecretAsInitiator,
   deriveSharedSecretAsResponder,
   destroyKeyPair,
-  HybridKeyPairData,
   getCombinedPublicKey,
 } from '../crypto/HybridKeyPair';
+import type { HybridQRPayload } from '../crypto/HybridQRPayload';
 import {
   generateQRPayload,
   encodeToCompressedBase64,
@@ -29,11 +30,11 @@ import {
   isValid,
   isHybrid,
   getRemainingSeconds,
-  HybridQRPayload,
   getCombinedPublicKeyFromPayload,
 } from '../crypto/HybridQRPayload';
 import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
-import { WebRTCChannel, ConnectionState } from '../crypto/WebRTCChannel';
+import type { ConnectionState } from '../crypto/WebRTCChannel';
+import { WebRTCChannel } from '../crypto/WebRTCChannel';
 
 export interface Message {
   id: string;
@@ -80,6 +81,9 @@ interface SessionStore {
   getWebRTCOffer: () => Promise<string | null>;
   handleWebRTCAnswer: (answerJson: string) => Promise<void>;
   handleICECandidate: (candidateJson: string) => Promise<void>;
+
+  // Internal methods (exposed for WebRTC callbacks)
+  _handleIncomingMessage: (data: Uint8Array) => Promise<void>;
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({

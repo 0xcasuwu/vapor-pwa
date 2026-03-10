@@ -16,7 +16,8 @@
  */
 
 import pako from 'pako';
-import { KEY_SIZES, HybridPublicKey, getCombinedPublicKey, parseCombinedPublicKey } from './HybridKeyPair';
+import type { HybridPublicKey } from './HybridKeyPair';
+import { KEY_SIZES, getCombinedPublicKey, parseCombinedPublicKey } from './HybridKeyPair';
 
 // Protocol constants (must match iOS)
 export const VERSION_CLASSIC_ONLY = 0x01;

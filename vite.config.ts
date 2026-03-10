@@ -4,6 +4,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // GitHub Pages deployment - repo name becomes base path
+  base: process.env.NODE_ENV === 'production' ? '/vapor-pwa/' : '/',
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +19,8 @@ export default defineConfig({
         background_color: '#0a0a0f',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
+        scope: '/vapor-pwa/',
+        start_url: '/vapor-pwa/',
         icons: [
           {
             src: 'pwa-192x192.png',
