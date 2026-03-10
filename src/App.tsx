@@ -289,18 +289,25 @@ function DynamicResponderFlow({ onCancel, onComplete }: { onCancel: () => void; 
     onComplete: () => void;
   }> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   useEffect(() => {
+    console.log('[ResponderFlow] Starting dynamic import...');
     import('./components/ResponderFlow')
-      .then(m => setComponent(() => m.ResponderFlow))
+      .then(m => {
+        console.log('[ResponderFlow] Import successful, module:', m);
+        setComponent(() => m.ResponderFlow);
+        setLoadState('loaded');
+      })
       .catch(err => {
-        console.error('Failed to load ResponderFlow:', err);
+        console.error('[ResponderFlow] Failed to load:', err);
         setError(err.message || 'Failed to load');
+        setLoadState('error');
       });
   }, []);
 
   if (error) return <div className="loading">Error: {error}</div>;
-  if (!Component) return <div className="loading">Loading...</div>;
+  if (!Component) return <div className="loading">Loading scanner... ({loadState})</div>;
   return <Component onCancel={onCancel} onComplete={onComplete} />;
 }
 
