@@ -18,7 +18,7 @@ import { useSessionStore } from './store/sessionStore';
 import { parseInviteFromUrl, clearInviteFromUrl } from './utils/share';
 import './App.css';
 
-type Screen = 'home' | 'generate' | 'scan' | 'showing_offer' | 'showing_answer' | 'chat' | 'joining';
+type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -28,12 +28,9 @@ function App() {
   const { state: sessionState } = useSessionStore();
 
   // Watch session state changes to update screen
+  // Only handle terminal states (active, error) - flow components handle intermediate states
   useEffect(() => {
-    if (sessionState === 'showing_offer') {
-      setScreen('showing_offer');
-    } else if (sessionState === 'showing_answer') {
-      setScreen('showing_answer');
-    } else if (sessionState === 'active') {
+    if (sessionState === 'active') {
       setScreen('chat');
     } else if (sessionState === 'error') {
       // Stay on current screen but show error
@@ -112,22 +109,6 @@ function App() {
 
       {screen === 'scan' && (
         <DynamicResponderFlow onCancel={handleCancel} onComplete={handleConnectionComplete} />
-      )}
-
-      {screen === 'showing_offer' && (
-        <DynamicSignalingQR
-          type="offer"
-          onCancel={handleCancel}
-          onComplete={handleConnectionComplete}
-        />
-      )}
-
-      {screen === 'showing_answer' && (
-        <DynamicSignalingQR
-          type="answer"
-          onCancel={handleCancel}
-          onComplete={handleConnectionComplete}
-        />
       )}
 
       {screen === 'chat' && (
@@ -315,33 +296,6 @@ function DynamicResponderFlow({ onCancel, onComplete }: { onCancel: () => void; 
 
   if (!Component) return <div className="loading">Loading...</div>;
   return <Component onCancel={onCancel} onComplete={onComplete} />;
-}
-
-/**
- * Signaling QR display (offer or answer)
- */
-function DynamicSignalingQR({
-  type,
-  onCancel,
-  onComplete,
-}: {
-  type: 'offer' | 'answer';
-  onCancel: () => void;
-  onComplete: () => void;
-}) {
-  const [Component, setComponent] = useState<React.ComponentType<{
-    type: 'offer' | 'answer';
-    onCancel: () => void;
-    onComplete: () => void;
-  }> | null>(null);
-
-  useEffect(() => {
-    import('./components/SignalingQRDisplay')
-      .then(m => setComponent(() => m.SignalingQRDisplay));
-  }, []);
-
-  if (!Component) return <div className="loading">Loading...</div>;
-  return <Component type={type} onCancel={onCancel} onComplete={onComplete} />;
 }
 
 function DynamicChat({ onEndSession }: { onEndSession: () => void }) {
