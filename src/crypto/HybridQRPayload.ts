@@ -229,6 +229,37 @@ export function decodeFromCompressedBase64(base64: string): HybridQRPayload | nu
 }
 
 /**
+ * Encode a classical-only payload for compact share links
+ * This produces a much smaller URL (~100 chars vs ~1700 chars)
+ */
+export function encodeCompactSharePayload(payload: HybridQRPayload): string {
+  // Create legacy v1 format (73 bytes total)
+  const buffer = new ArrayBuffer(PAYLOAD_SIZES.LEGACY_TOTAL);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  let offset = 0;
+
+  // Version (1 byte) - use v1 (classical only)
+  view.setUint8(offset, VERSION_CLASSIC_ONLY);
+  offset += 1;
+
+  // Classical public key only (32 bytes)
+  bytes.set(payload.classicalPublicKey, offset);
+  offset += KEY_SIZES.CLASSICAL_PUBLIC_KEY;
+
+  // Nonce (32 bytes)
+  bytes.set(payload.nonce, offset);
+  offset += PAYLOAD_SIZES.NONCE;
+
+  // Timestamp (8 bytes)
+  view.setFloat64(offset, payload.timestamp, true);
+
+  // Base64 encode (no compression needed for 73 bytes)
+  return btoa(String.fromCharCode(...bytes));
+}
+
+/**
  * Check if payload has expired
  */
 export function isExpired(payload: HybridQRPayload): boolean {

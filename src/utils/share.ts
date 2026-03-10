@@ -13,7 +13,9 @@
  * The payload is embedded in the URL fragment (not sent to server)
  */
 export function generateInviteUrl(qrPayload: string): string {
-  const baseUrl = window.location.origin;
+  // Use origin + pathname to account for GitHub Pages base path
+  // e.g., https://0xcasuwu.github.io/vapor-pwa/ -> origin = https://0xcasuwu.github.io, pathname = /vapor-pwa/
+  const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
   // Use fragment (#) so payload never hits server logs
   return `${baseUrl}/#/join/${encodeURIComponent(qrPayload)}`;
 }

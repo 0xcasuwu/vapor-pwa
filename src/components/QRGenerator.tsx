@@ -23,6 +23,7 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
   const [shareStatus, setShareStatus] = useState<'idle' | 'shared' | 'copied' | 'error'>('idle');
   const {
     qrString,
+    compactShareString,
     qrExpirySeconds,
     isQuantumSecure,
     generateQR,
@@ -69,9 +70,10 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
   };
 
   const handleShare = async () => {
-    if (!qrString) return;
+    // Use compact share string (classical only) for much shorter URLs
+    if (!compactShareString) return;
 
-    const result = await shareInvite(qrString);
+    const result = await shareInvite(compactShareString);
 
     if (result.success) {
       setShareStatus(result.method === 'share' ? 'shared' : 'copied');
@@ -134,7 +136,7 @@ export function QRGenerator({ onCancel }: QRGeneratorProps) {
         <button
           className="btn-share"
           onClick={handleShare}
-          disabled={!qrString || shareStatus !== 'idle'}
+          disabled={!compactShareString || shareStatus !== 'idle'}
         >
           <ShareIcon />
           <span>{shareStatus === 'idle' ? getShareButtonText() : getStatusMessage()}</span>
