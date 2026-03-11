@@ -383,31 +383,45 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
    * Bob receives Alice's WebRTC answer, completes connection
    */
   processAnswerQR: async (qrString: string) => {
+    console.log('[processAnswerQR] Starting, qrString length:', qrString.length);
+
     const webrtc = get()._webrtc;
 
     if (!webrtc) {
-      set({ state: 'error', error: 'No WebRTC connection' });
+      console.error('[processAnswerQR] No WebRTC instance found');
+      set({ state: 'error', error: 'No WebRTC connection - please restart' });
       return false;
     }
 
     try {
+      console.log('[processAnswerQR] Decoding payload...');
       const payload = decodeSignalingPayload(qrString) as SignalingAnswer;
 
-      if (!payload || payload.type !== SIGNALING_TYPE.ANSWER) {
-        throw new Error('Invalid answer QR');
+      if (!payload) {
+        console.error('[processAnswerQR] Failed to decode payload');
+        throw new Error('Invalid QR format - not a signaling payload');
+      }
+
+      if (payload.type !== SIGNALING_TYPE.ANSWER) {
+        console.error('[processAnswerQR] Wrong payload type:', payload.type);
+        throw new Error('Wrong QR type - expected answer, got offer');
       }
 
       if (isSignalingExpired(payload)) {
-        throw new Error('Answer has expired');
+        console.error('[processAnswerQR] Payload expired');
+        throw new Error('Answer has expired (2 min timeout)');
       }
 
+      console.log('[processAnswerQR] Completing WebRTC connection...');
       // Complete WebRTC connection with answer
       const answerJson = JSON.stringify({ type: 'answer', sdp: payload.sdp });
       await webrtc.completeConnection(answerJson);
 
+      console.log('[processAnswerQR] Success, setting state to connecting');
       set({ state: 'connecting' });
       return true;
     } catch (error) {
+      console.error('[processAnswerQR] Error:', error);
       set({
         state: 'error',
         error: error instanceof Error ? error.message : 'Failed to process answer',
