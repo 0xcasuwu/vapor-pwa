@@ -182,55 +182,24 @@ body {
 }
 
 .vapor-logo {
-  filter: drop-shadow(0 0 30px rgba(0, 255, 242, 0.3));
+  /* Static logo - no glow effects */
 }
 
-/* Logo animations */
+/* Logo - static (no animations) */
 .vapor-logo .wisp {
-  animation: wisp-float 4s ease-in-out infinite;
-}
-
-.vapor-logo .wisp-1 { animation-delay: 0s; }
-.vapor-logo .wisp-2 { animation-delay: -1.3s; }
-.vapor-logo .wisp-3 { animation-delay: -2.6s; }
-
-@keyframes wisp-float {
-  0%, 100% {
-    opacity: 0.6;
-    transform: translateY(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-5px);
-  }
+  opacity: 0.8;
 }
 
 .vapor-logo .enso {
-  animation: enso-rotate 20s linear infinite;
   transform-origin: 60px 55px;
 }
 
-@keyframes enso-rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 .vapor-logo .core {
-  animation: core-pulse 2s ease-in-out infinite;
-}
-
-@keyframes core-pulse {
-  0%, 100% { opacity: 1; r: 3; }
-  50% { opacity: 0.7; r: 4; }
+  opacity: 1;
 }
 
 .vapor-logo .ring-outer {
-  animation: ring-pulse 4s ease-in-out infinite;
-}
-
-@keyframes ring-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
+  opacity: 0.4;
 }
 
 /* Title styling */
@@ -251,7 +220,6 @@ body {
   font-size: 1.25rem;
   font-weight: 300;
   color: var(--neon-cyan);
-  text-shadow: var(--glow-text-cyan);
   letter-spacing: 0.5em;
   opacity: 0.8;
 }
@@ -264,15 +232,12 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: none;
-  filter: drop-shadow(0 0 20px rgba(0, 255, 242, 0.3));
 }
 
 .tagline {
   font-family: var(--font-jp), serif;
   font-size: 0.8rem;
   color: var(--neon-pink);
-  text-shadow: var(--glow-text-pink);
   opacity: 0.7;
   letter-spacing: 0.2em;
 }
