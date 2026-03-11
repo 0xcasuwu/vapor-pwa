@@ -14,6 +14,7 @@ import QRCode from 'qrcode';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import type { IDetectedBarcode } from '@yudiel/react-qr-scanner';
 import { useSessionStore } from '../store/sessionStore';
+import { decodeDebugLog } from '../crypto/SignalingPayload';
 
 type FlowStep = 'scanning_initial' | 'showing_offer' | 'scanning_answer' | 'connecting';
 
@@ -128,6 +129,42 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
     setStep('showing_offer');
     setScanning(false);
     setError(null);
+  };
+
+  // Debug: paste QR data manually for desktop testing (initial QR)
+  const handlePasteInitialQR = async () => {
+    const qrData = prompt('Paste Alice\'s initial QR data (base64 string):');
+    if (!qrData) return;
+
+    setError(`Pasted ${qrData.length} chars, processing...`);
+    try {
+      const result = await scanQR(qrData.trim());
+      if (!result) {
+        const storeError = useSessionStore.getState().error;
+        setError(`Failed: ${storeError || 'Unknown'}`);
+      }
+    } catch (err) {
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Debug: paste QR data manually for desktop testing (answer QR)
+  const handlePasteAnswerQR = async () => {
+    const qrData = prompt('Paste Alice\'s answer QR data (base64 string):');
+    if (!qrData) return;
+
+    setError(`Pasted ${qrData.length} chars, processing...`);
+    try {
+      const success = await processAnswerQR(qrData.trim());
+      if (!success) {
+        const storeError = useSessionStore.getState().error;
+        const debugInfo = decodeDebugLog.join(' | ');
+        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
+      }
+    } catch (err) {
+      const debugInfo = decodeDebugLog.join(' | ');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
+    }
   };
 
   const handleCancel = () => {
@@ -261,6 +298,10 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
               Your session key will be derived using post-quantum cryptography.
             </p>
           </div>
+
+          <button className="btn-secondary" onClick={handlePasteInitialQR} style={{ marginTop: '10px' }}>
+            Paste QR Data (Debug)
+          </button>
         </>
       )}
 
@@ -359,6 +400,10 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
 
           <button className="btn-secondary" onClick={handleBackToOffer}>
             Show My QR Again
+          </button>
+
+          <button className="btn-secondary" onClick={handlePasteAnswerQR} style={{ marginTop: '10px' }}>
+            Paste QR Data (Debug)
           </button>
         </>
       )}

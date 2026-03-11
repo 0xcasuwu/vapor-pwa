@@ -145,6 +145,25 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
     setError(null);
   };
 
+  // Debug: paste QR data manually for desktop testing
+  const handlePasteQR = async () => {
+    const qrData = prompt('Paste the QR data (base64 string):');
+    if (!qrData) return;
+
+    setError(`Pasted ${qrData.length} chars, processing...`);
+    try {
+      const result = await processOfferQR(qrData.trim());
+      if (!result) {
+        const storeError = useSessionStore.getState().error;
+        const debugInfo = decodeDebugLog.join(' | ');
+        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
+      }
+    } catch (err) {
+      const debugInfo = decodeDebugLog.join(' | ');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
+    }
+  };
+
   /**
    * Convert canvas to blob for sharing
    */
@@ -327,6 +346,10 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
 
           <button className="btn-secondary" onClick={handleBackToQR}>
             Show My QR Again
+          </button>
+
+          <button className="btn-secondary" onClick={handlePasteQR} style={{ marginTop: '10px' }}>
+            Paste QR Data (Debug)
           </button>
         </>
       )}
