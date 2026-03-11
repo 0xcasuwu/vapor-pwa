@@ -266,6 +266,11 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
 
   return (
     <div className="responder-flow">
+      {/* Debug: Role indicator */}
+      <div style={{ background: '#2196F3', color: 'white', padding: '8px', borderRadius: '4px', marginBottom: '16px', textAlign: 'center', fontWeight: 'bold' }}>
+        BOB (Responder) - You join with their invite
+      </div>
+
       {/* Step 1: Scan Alice's initial QR */}
       {step === 'scanning_initial' && (
         <>
@@ -312,7 +317,7 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
           </div>
 
           <button className="btn-secondary" onClick={handlePasteInitialQR} style={{ marginTop: '10px' }}>
-            Paste QR Data (Debug)
+            Paste Alice's INITIAL QR (from Alice's "Copy INITIAL QR")
           </button>
         </>
       )}
@@ -377,7 +382,7 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
               Scan Their Response
             </button>
             <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
-              Copy QR Data (Debug)
+              Copy OFFER QR (for Alice to paste in "Scan Their Response")
             </button>
           </div>
         </>
@@ -418,7 +423,7 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
           </button>
 
           <button className="btn-secondary" onClick={handlePasteAnswerQR} style={{ marginTop: '10px' }}>
-            Paste QR Data (Debug)
+            Paste Alice's ANSWER QR (from Alice's "Copy ANSWER QR")
           </button>
         </>
       )}

@@ -264,6 +264,11 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
 
   return (
     <div className="initiator-flow">
+      {/* Debug: Role indicator */}
+      <div style={{ background: '#4CAF50', color: 'white', padding: '8px', borderRadius: '4px', marginBottom: '16px', textAlign: 'center', fontWeight: 'bold' }}>
+        ALICE (Initiator) - You create the invite
+      </div>
+
       {/* Step 1: Show initial QR */}
       {step === 'showing_qr' && (
         <>
@@ -365,7 +370,7 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
           </button>
 
           <button className="btn-secondary" onClick={handlePasteQR} style={{ marginTop: '10px' }}>
-            Paste QR Data (Debug)
+            Paste Bob's OFFER QR (from Bob's "Copy OFFER QR")
           </button>
         </>
       )}
@@ -403,7 +408,7 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
           </div>
 
           <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
-            Copy QR Data (Debug)
+            Copy ANSWER QR (for Bob to paste in "Scan Their Response")
           </button>
         </>
       )}
