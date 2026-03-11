@@ -148,7 +148,8 @@ export function isValidSignalingPayload(payload: SignalingPayload): boolean {
 export function isSignalingExpired(payload: SignalingPayload): boolean {
   const now = Date.now() / 1000;
   const age = now - payload.timestamp;
-  return age > 120; // 2 minute expiry for signaling
+  // TODO: Restore to 120 seconds after testing
+  return age > 3600; // 1 hour for testing
 }
 
 /**

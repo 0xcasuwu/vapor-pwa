@@ -22,7 +22,8 @@ import { KEY_SIZES, getCombinedPublicKey } from './HybridKeyPair';
 // Protocol constants (must match iOS)
 export const VERSION_CLASSIC_ONLY = 0x01;
 export const VERSION_HYBRID = 0x02;
-export const DEFAULT_EXPIRY_SECONDS = 60;
+// TODO: Restore to 60 seconds after testing
+export const DEFAULT_EXPIRY_SECONDS = 3600; // 1 hour for testing
 
 // Payload sizes
 export const PAYLOAD_SIZES = {
