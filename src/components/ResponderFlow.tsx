@@ -98,14 +98,17 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
     setError(null);
 
     try {
+      setError(`Scanned ${qrData.length} chars, processing...`);
       const success = await processAnswerQR(qrData);
       if (!success) {
-        setError('Failed to process answer QR');
+        // Get the error from the store
+        const storeError = useSessionStore.getState().error;
+        setError(`Failed: ${storeError || 'Unknown error'}`);
         setScanning(true);
       }
       // State change will update step to 'connecting' then 'active'
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process answer');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
       setScanning(true);
     }
   }, [scanning, processAnswerQR]);

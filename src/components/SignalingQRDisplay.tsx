@@ -67,14 +67,17 @@ export function SignalingQRDisplay({ type, onComplete, onCancel }: SignalingQRDi
 
     try {
       // Bob scanning Alice's answer QR
+      setError(`Scanned ${qrData.length} chars, processing...`);
       const success = await processAnswerQR(qrData);
       if (!success) {
-        setError('Failed to process answer QR');
+        // Get the error from the store
+        const storeError = useSessionStore.getState().error;
+        setError(`Failed: ${storeError || 'Unknown error'}`);
         setScanning(true);
       }
       // Connection will complete and trigger onComplete via state change
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process QR code');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
       setScanning(true);
     }
   }, [scanning, processAnswerQR]);
