@@ -92,10 +92,20 @@ export function encodeSignalingPayload(payload: SignalingPayload): string {
  */
 export function decodeSignalingPayload(encoded: string): SignalingPayload | null {
   try {
+    console.log('[decodeSignalingPayload] Input length:', encoded.length);
+    console.log('[decodeSignalingPayload] First 50 chars:', encoded.substring(0, 50));
+
     const compressed = base64ToArray(encoded);
+    console.log('[decodeSignalingPayload] Compressed bytes:', compressed.length);
+
     const decompressed = pako.inflate(compressed);
+    console.log('[decodeSignalingPayload] Decompressed bytes:', decompressed.length);
+
     const jsonString = new TextDecoder().decode(decompressed);
+    console.log('[decodeSignalingPayload] JSON string:', jsonString.substring(0, 100));
+
     const data = JSON.parse(jsonString);
+    console.log('[decodeSignalingPayload] Parsed type:', data.t);
 
     if (data.t === SIGNALING_TYPE.OFFER) {
       return {
@@ -113,9 +123,10 @@ export function decodeSignalingPayload(encoded: string): SignalingPayload | null
       };
     }
 
+    console.log('[decodeSignalingPayload] Unknown type:', data.t);
     return null;
   } catch (err) {
-    console.error('Failed to decode signaling payload:', err);
+    console.error('[decodeSignalingPayload] Failed:', err);
     return null;
   }
 }

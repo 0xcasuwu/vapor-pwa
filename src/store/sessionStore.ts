@@ -319,11 +319,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     try {
       console.log('[processOfferQR] Decoding payload...');
-      const payload = decodeSignalingPayload(qrString) as SignalingOffer;
+      let payload: SignalingOffer | null = null;
+      try {
+        payload = decodeSignalingPayload(qrString) as SignalingOffer;
+      } catch (decodeErr) {
+        console.error('[processOfferQR] Decode threw:', decodeErr);
+        throw new Error(`Decode error: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`);
+      }
 
       if (!payload) {
         console.error('[processOfferQR] decodeSignalingPayload returned null');
-        throw new Error('Invalid QR - failed to decode (not a signaling payload?)');
+        throw new Error('Decode returned null - check console for details');
       }
 
       console.log('[processOfferQR] Payload type:', payload.type, 'Expected:', SIGNALING_TYPE.OFFER);
