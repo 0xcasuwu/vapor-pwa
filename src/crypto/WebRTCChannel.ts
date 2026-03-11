@@ -49,6 +49,7 @@ export class WebRTCChannel {
 
   /**
    * Initialize as the connection initiator (creates offer)
+   * Waits for ICE gathering to complete so all candidates are embedded in the SDP
    */
   async initAsInitiator(): Promise<string> {
     this.createPeerConnection();
@@ -64,17 +65,21 @@ export class WebRTCChannel {
     const offer = await this.pc!.createOffer();
     await this.pc!.setLocalDescription(offer);
 
+    // Wait for ICE gathering to complete so all candidates are in the SDP
+    await this.waitForIceGathering();
+
     this.setState('connecting');
 
-    // Return offer as JSON string
+    // Return the complete local description (includes ICE candidates)
     return JSON.stringify({
       type: 'offer',
-      sdp: offer.sdp,
+      sdp: this.pc!.localDescription!.sdp,
     });
   }
 
   /**
    * Initialize as the connection responder (receives offer, creates answer)
+   * Waits for ICE gathering to complete so all candidates are embedded in the SDP
    */
   async initAsResponder(offerJson: string): Promise<string> {
     this.createPeerConnection();
@@ -85,14 +90,14 @@ export class WebRTCChannel {
       this.setupDataChannel(this.dc);
     };
 
-    // Parse and set remote offer
+    // Parse and set remote offer (already contains ICE candidates)
     const offer = JSON.parse(offerJson);
     await this.pc!.setRemoteDescription({
       type: 'offer',
       sdp: offer.sdp,
     });
 
-    // Process any pending ICE candidates
+    // Process any pending ICE candidates (shouldn't be any with gathering-complete mode)
     for (const candidate of this.pendingCandidates) {
       await this.pc!.addIceCandidate(candidate);
     }
@@ -102,12 +107,15 @@ export class WebRTCChannel {
     const answer = await this.pc!.createAnswer();
     await this.pc!.setLocalDescription(answer);
 
+    // Wait for ICE gathering to complete so all candidates are in the SDP
+    await this.waitForIceGathering();
+
     this.setState('connecting');
 
-    // Return answer as JSON string
+    // Return the complete local description (includes ICE candidates)
     return JSON.stringify({
       type: 'answer',
-      sdp: answer.sdp,
+      sdp: this.pc!.localDescription!.sdp,
     });
   }
 
@@ -183,6 +191,43 @@ export class WebRTCChannel {
    */
   getState(): ConnectionState {
     return this.state;
+  }
+
+  /**
+   * Wait for ICE gathering to complete
+   * This ensures all ICE candidates are embedded in the local SDP
+   */
+  private waitForIceGathering(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.pc) {
+        resolve();
+        return;
+      }
+
+      // Already complete
+      if (this.pc.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+
+      // Wait for gathering to complete
+      const checkState = () => {
+        if (this.pc?.iceGatheringState === 'complete') {
+          this.pc.removeEventListener('icegatheringstatechange', checkState);
+          resolve();
+        }
+      };
+
+      this.pc.addEventListener('icegatheringstatechange', checkState);
+
+      // Timeout after 10 seconds to prevent hanging
+      setTimeout(() => {
+        if (this.pc) {
+          this.pc.removeEventListener('icegatheringstatechange', checkState);
+        }
+        resolve();
+      }, 10000);
+    });
   }
 
   /**

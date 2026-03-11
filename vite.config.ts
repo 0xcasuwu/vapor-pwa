@@ -1,9 +1,15 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    include: ['src/**/*.test.ts'],
+  },
   // GitHub Pages deployment - repo name becomes base path
   base: process.env.NODE_ENV === 'production' ? '/vapor-pwa/' : '/',
   plugins: [
