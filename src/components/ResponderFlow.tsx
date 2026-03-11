@@ -133,37 +133,39 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
 
   // Debug: paste QR data manually for desktop testing (initial QR)
   const handlePasteInitialQR = async () => {
-    const qrData = prompt('Paste Alice\'s initial QR data (base64 string):');
+    const qrData = prompt('BOB Step 1: Paste Alice\'s INITIAL QR here (from Alice Step 1):');
     if (!qrData) return;
 
-    setError(`Pasted ${qrData.length} chars, processing...`);
+    setError(`[Step 1] Pasted ${qrData.length} chars, processing as INITIAL QR...`);
     try {
       const result = await scanQR(qrData.trim());
       if (!result) {
         const storeError = useSessionStore.getState().error;
-        setError(`Failed: ${storeError || 'Unknown'}`);
+        setError(`[Step 1 INITIAL] Failed: ${storeError || 'Unknown'}`);
+      } else {
+        setError(null); // Clear error on success
       }
     } catch (err) {
-      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`[Step 1 INITIAL] Exception: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
   // Debug: paste QR data manually for desktop testing (answer QR)
   const handlePasteAnswerQR = async () => {
-    const qrData = prompt('Paste Alice\'s answer QR data (base64 string):');
+    const qrData = prompt('BOB Step 3: Paste Alice\'s ANSWER QR here:');
     if (!qrData) return;
 
-    setError(`Pasted ${qrData.length} chars, processing...`);
+    setError(`[Step 3] Pasted ${qrData.length} chars, processing as ANSWER...`);
     try {
       const success = await processAnswerQR(qrData.trim());
       if (!success) {
         const storeError = useSessionStore.getState().error;
-        const debugInfo = decodeDebugLog.join(' | ');
-        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
+        const debugInfo = decodeDebugLog.join('\n');
+        setError(`[Step 3 ANSWER] Failed: ${storeError || 'Unknown'}\n\nDebug:\n${debugInfo}`);
       }
     } catch (err) {
-      const debugInfo = decodeDebugLog.join(' | ');
-      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
+      const debugInfo = decodeDebugLog.join('\n');
+      setError(`[Step 3 ANSWER] Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug:\n${debugInfo}`);
     }
   };
 

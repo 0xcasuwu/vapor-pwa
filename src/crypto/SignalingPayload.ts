@@ -104,6 +104,24 @@ export function decodeSignalingPayload(encoded: string): SignalingPayload | null
     const compressed = base64ToArray(encoded);
     decodeDebugLog.push(`Base64 decoded: ${compressed.length} bytes`);
 
+    // Check if this looks like an INITIAL QR (public keys payload)
+    // Initial QR is ~1257 bytes uncompressed, ~850-950 compressed
+    // Signaling QR (offer/answer) contains JSON with SDP
+    if (compressed.length > 800 && compressed.length < 1000) {
+      // Try to decompress and check first byte for version
+      try {
+        const decompressed = pako.inflate(compressed);
+        // Version 0x02 = hybrid key payload (INITIAL QR)
+        if (decompressed.length === 1257 && decompressed[0] === 0x02) {
+          decodeDebugLog.push(`ERROR: This is Alice's INITIAL QR (public keys), not a signaling payload!`);
+          decodeDebugLog.push(`You need Bob's OFFER QR or Alice's ANSWER QR`);
+          return null;
+        }
+      } catch {
+        // Not the initial payload format, continue
+      }
+    }
+
     const decompressed = pako.inflate(compressed);
     decodeDebugLog.push(`Inflated: ${decompressed.length} bytes`);
 
@@ -134,7 +152,14 @@ export function decodeSignalingPayload(encoded: string): SignalingPayload | null
     decodeDebugLog.push(`Unknown type: ${data.t}`);
     return null;
   } catch (err) {
-    decodeDebugLog.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    // Check if the error suggests this is an INITIAL QR (not JSON)
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('JSON') || errMsg.includes('Unexpected token')) {
+      decodeDebugLog.push(`ERROR: Not a signaling QR - might be Alice's INITIAL QR (public keys)`);
+      decodeDebugLog.push(`Make sure you're copying the correct QR at each step`);
+    } else {
+      decodeDebugLog.push(`ERROR: ${errMsg}`);
+    }
     return null;
   }
 }

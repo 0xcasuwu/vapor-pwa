@@ -147,20 +147,22 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
 
   // Debug: paste QR data manually for desktop testing
   const handlePasteQR = async () => {
-    const qrData = prompt('Paste the QR data (base64 string):');
+    const qrData = prompt('ALICE Step 2: Paste Bob\'s OFFER QR here (from Bob Step 2):');
     if (!qrData) return;
 
-    setError(`Pasted ${qrData.length} chars, processing...`);
+    setError(`[Step 2] Pasted ${qrData.length} chars, processing as OFFER...`);
     try {
       const result = await processOfferQR(qrData.trim());
       if (!result) {
         const storeError = useSessionStore.getState().error;
-        const debugInfo = decodeDebugLog.join(' | ');
-        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
+        const debugInfo = decodeDebugLog.join('\n');
+        setError(`[Step 2 OFFER] Failed: ${storeError || 'Unknown'}\n\nDebug:\n${debugInfo}`);
+      } else {
+        setError(null); // Clear error on success
       }
     } catch (err) {
-      const debugInfo = decodeDebugLog.join(' | ');
-      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
+      const debugInfo = decodeDebugLog.join('\n');
+      setError(`[Step 2 OFFER] Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug:\n${debugInfo}`);
     }
   };
 
