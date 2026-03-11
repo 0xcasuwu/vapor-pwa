@@ -15,6 +15,7 @@ import QRCode from 'qrcode';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import type { IDetectedBarcode } from '@yudiel/react-qr-scanner';
 import { useSessionStore } from '../store/sessionStore';
+import { decodeDebugLog } from '../crypto/SignalingPayload';
 
 type FlowStep = 'generating' | 'showing_qr' | 'scanning_offer' | 'showing_answer' | 'connecting';
 
@@ -116,12 +117,14 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
       const result = await processOfferQR(qrData);
       if (!result) {
         const storeError = useSessionStore.getState().error;
-        setError(`Failed: ${storeError || 'Unknown error'}`);
+        const debugInfo = decodeDebugLog.join(' | ');
+        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
         setScanning(true);
       }
       // State change will update step to 'showing_answer'
     } catch (err) {
-      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
+      const debugInfo = decodeDebugLog.join(' | ');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
       setScanning(true);
     }
   }, [scanning, processOfferQR]);

@@ -87,27 +87,34 @@ export function encodeSignalingPayload(payload: SignalingPayload): string {
   return arrayToBase64(compressed);
 }
 
+// Debug log storage for UI display
+export const decodeDebugLog: string[] = [];
+
 /**
  * Decode signaling payload from compressed base64
  */
 export function decodeSignalingPayload(encoded: string): SignalingPayload | null {
+  // Clear previous logs
+  decodeDebugLog.length = 0;
+
   try {
-    console.log('[decodeSignalingPayload] Input length:', encoded.length);
-    console.log('[decodeSignalingPayload] First 50 chars:', encoded.substring(0, 50));
+    decodeDebugLog.push(`Input: ${encoded.length} chars`);
+    decodeDebugLog.push(`First 30: ${encoded.substring(0, 30)}...`);
 
     const compressed = base64ToArray(encoded);
-    console.log('[decodeSignalingPayload] Compressed bytes:', compressed.length);
+    decodeDebugLog.push(`Base64 decoded: ${compressed.length} bytes`);
 
     const decompressed = pako.inflate(compressed);
-    console.log('[decodeSignalingPayload] Decompressed bytes:', decompressed.length);
+    decodeDebugLog.push(`Inflated: ${decompressed.length} bytes`);
 
     const jsonString = new TextDecoder().decode(decompressed);
-    console.log('[decodeSignalingPayload] JSON string:', jsonString.substring(0, 100));
+    decodeDebugLog.push(`JSON: ${jsonString.substring(0, 50)}...`);
 
     const data = JSON.parse(jsonString);
-    console.log('[decodeSignalingPayload] Parsed type:', data.t);
+    decodeDebugLog.push(`Type field: ${data.t}`);
 
     if (data.t === SIGNALING_TYPE.OFFER) {
+      decodeDebugLog.push('Matched OFFER type');
       return {
         type: SIGNALING_TYPE.OFFER,
         sdp: data.s,
@@ -116,6 +123,7 @@ export function decodeSignalingPayload(encoded: string): SignalingPayload | null
         timestamp: data.ts,
       };
     } else if (data.t === SIGNALING_TYPE.ANSWER) {
+      decodeDebugLog.push('Matched ANSWER type');
       return {
         type: SIGNALING_TYPE.ANSWER,
         sdp: data.s,
@@ -123,10 +131,10 @@ export function decodeSignalingPayload(encoded: string): SignalingPayload | null
       };
     }
 
-    console.log('[decodeSignalingPayload] Unknown type:', data.t);
+    decodeDebugLog.push(`Unknown type: ${data.t}`);
     return null;
   } catch (err) {
-    console.error('[decodeSignalingPayload] Failed:', err);
+    decodeDebugLog.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
