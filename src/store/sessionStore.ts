@@ -42,6 +42,7 @@ import {
   createSignalingAnswer,
   encodeSignalingPayload,
   decodeSignalingPayload,
+  decodeDebugLog,
   isSignalingPayload,
   isValidSignalingPayload,
   isSignalingExpired,
@@ -408,7 +409,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     if (!webrtc) {
       console.error('[processAnswerQR] No WebRTC instance found');
-      set({ state: 'error', error: 'No WebRTC connection - please restart' });
+      set({ state: 'error', error: 'No WebRTC connection - Bob needs to complete Step 1 first' });
       return false;
     }
 
@@ -418,7 +419,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       if (!payload) {
         console.error('[processAnswerQR] Failed to decode payload');
-        throw new Error('Invalid QR format - not a signaling payload');
+        const debugInfo = decodeDebugLog.join(' | ');
+        throw new Error(`Invalid ANSWER QR. Debug: ${debugInfo}`);
       }
 
       if (payload.type !== SIGNALING_TYPE.ANSWER) {
