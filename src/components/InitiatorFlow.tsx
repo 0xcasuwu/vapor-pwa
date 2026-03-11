@@ -252,12 +252,15 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
   };
 
   // Debug: copy QR data to clipboard
+  // In Step 1 (showing_qr): copy qrString (INITIAL QR)
+  // In Step 3 (showing_answer): copy signalingQrString (ANSWER QR)
   const handleCopyQRData = async () => {
-    const data = qrString || signalingQrString;
+    const data = step === 'showing_answer' ? signalingQrString : qrString;
     if (!data) return;
     try {
       await navigator.clipboard.writeText(data);
-      setError('Copied to clipboard!');
+      const label = step === 'showing_answer' ? 'ANSWER QR' : 'INITIAL QR';
+      setError(`Copied ${label} to clipboard!`);
       setTimeout(() => setError(null), 2000);
     } catch {
       setError('Failed to copy');
