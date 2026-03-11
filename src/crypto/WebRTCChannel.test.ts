@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebRTCChannel, type ConnectionState } from './WebRTCChannel';
+import { WebRTCChannel } from './WebRTCChannel';
 
 // Mock RTCPeerConnection
 class MockRTCPeerConnection {
@@ -49,7 +49,7 @@ class MockRTCPeerConnection {
     this.remoteDescription = desc;
   }
 
-  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+  async addIceCandidate(_candidate: RTCIceCandidateInit): Promise<void> {
     // Mock implementation
   }
 
@@ -86,11 +86,11 @@ class MockRTCDataChannel {
   onerror: ((error: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
 
-  constructor(label: string, options?: RTCDataChannelInit) {
+  constructor(label: string, _options?: RTCDataChannelInit) {
     this.label = label;
   }
 
-  send(data: ArrayBuffer | string): void {
+  send(_data: ArrayBuffer | string): void {
     if (this.readyState !== 'open') {
       throw new Error('DataChannel not open');
     }
@@ -116,11 +116,13 @@ class MockRTCDataChannel {
 const originalRTCPeerConnection = globalThis.RTCPeerConnection;
 
 beforeEach(() => {
-  (globalThis as unknown as { RTCPeerConnection: typeof MockRTCPeerConnection }).RTCPeerConnection = MockRTCPeerConnection as unknown as typeof RTCPeerConnection;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).RTCPeerConnection = MockRTCPeerConnection;
 });
 
 afterEach(() => {
-  (globalThis as unknown as { RTCPeerConnection: typeof RTCPeerConnection }).RTCPeerConnection = originalRTCPeerConnection;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).RTCPeerConnection = originalRTCPeerConnection;
 });
 
 describe('WebRTCChannel', () => {

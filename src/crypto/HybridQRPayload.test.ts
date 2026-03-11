@@ -20,7 +20,7 @@ import {
   VERSION_HYBRID,
   PAYLOAD_SIZES,
 } from './HybridQRPayload';
-import { generateHybridKeyPair, KEY_SIZES } from './HybridKeyPair';
+import { generateHybridKeyPair } from './HybridKeyPair';
 
 describe('HybridQRPayload', () => {
   describe('generateQRPayload', () => {
