@@ -249,6 +249,19 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
     }
   };
 
+  // Debug: copy QR data to clipboard
+  const handleCopyQRData = async () => {
+    const data = qrString || signalingQrString;
+    if (!data) return;
+    try {
+      await navigator.clipboard.writeText(data);
+      setError('Copied to clipboard!');
+      setTimeout(() => setError(null), 2000);
+    } catch {
+      setError('Failed to copy');
+    }
+  };
+
   return (
     <div className="initiator-flow">
       {/* Step 1: Show initial QR */}
@@ -309,6 +322,9 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
           <div className="flow-actions">
             <button className="btn-primary" onClick={handleStartScanOffer}>
               Scan Their Response
+            </button>
+            <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
+              Copy QR Data (Debug)
             </button>
           </div>
         </>
@@ -385,6 +401,10 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
               Once they scan this QR, the secure connection will be established.
             </p>
           </div>
+
+          <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
+            Copy QR Data (Debug)
+          </button>
         </>
       )}
 

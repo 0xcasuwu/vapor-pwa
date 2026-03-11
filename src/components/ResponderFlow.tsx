@@ -252,6 +252,18 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
     }
   };
 
+  // Debug: copy QR data to clipboard
+  const handleCopyQRData = async () => {
+    if (!signalingQrString) return;
+    try {
+      await navigator.clipboard.writeText(signalingQrString);
+      setError('Copied to clipboard!');
+      setTimeout(() => setError(null), 2000);
+    } catch {
+      setError('Failed to copy');
+    }
+  };
+
   return (
     <div className="responder-flow">
       {/* Step 1: Scan Alice's initial QR */}
@@ -363,6 +375,9 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
           <div className="flow-actions">
             <button className="btn-primary" onClick={handleStartScanAnswer}>
               Scan Their Response
+            </button>
+            <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
+              Copy QR Data (Debug)
             </button>
           </div>
         </>
