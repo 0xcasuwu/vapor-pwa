@@ -306,26 +306,39 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
    * Alice receives Bob's WebRTC offer + KEM ciphertext, creates answer QR
    */
   processOfferQR: async (qrString: string) => {
+    console.log('[processOfferQR] Starting, qrString length:', qrString.length);
+    console.log('[processOfferQR] First 100 chars:', qrString.substring(0, 100));
+
     const keyPair = get()._keyPair;
 
     if (!keyPair) {
+      console.error('[processOfferQR] No key pair found');
       set({ state: 'error', error: 'No key pair - generate QR first' });
       return null;
     }
 
     try {
+      console.log('[processOfferQR] Decoding payload...');
       const payload = decodeSignalingPayload(qrString) as SignalingOffer;
 
-      if (!payload || payload.type !== SIGNALING_TYPE.OFFER) {
-        throw new Error('Invalid offer QR');
+      if (!payload) {
+        console.error('[processOfferQR] decodeSignalingPayload returned null');
+        throw new Error('Invalid QR - failed to decode (not a signaling payload?)');
+      }
+
+      console.log('[processOfferQR] Payload type:', payload.type, 'Expected:', SIGNALING_TYPE.OFFER);
+
+      if (payload.type !== SIGNALING_TYPE.OFFER) {
+        throw new Error(`Wrong QR type: got ${payload.type}, expected ${SIGNALING_TYPE.OFFER} (offer)`);
       }
 
       if (!isValidSignalingPayload(payload)) {
+        console.error('[processOfferQR] Invalid payload structure');
         throw new Error('Invalid offer payload structure');
       }
 
       if (isSignalingExpired(payload)) {
-        throw new Error('Offer has expired');
+        throw new Error('Offer has expired (2 min timeout)');
       }
 
       // Alice decapsulates using Bob's KEM ciphertext

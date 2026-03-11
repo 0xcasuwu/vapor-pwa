@@ -112,14 +112,16 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
     setError(null);
 
     try {
+      setError(`Scanned ${qrData.length} chars, processing...`);
       const result = await processOfferQR(qrData);
       if (!result) {
-        setError('Failed to process offer QR');
+        const storeError = useSessionStore.getState().error;
+        setError(`Failed: ${storeError || 'Unknown error'}`);
         setScanning(true);
       }
       // State change will update step to 'showing_answer'
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process offer');
+      setError(`Exception: ${err instanceof Error ? err.message : String(err)}`);
       setScanning(true);
     }
   }, [scanning, processOfferQR]);
