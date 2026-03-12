@@ -1,23 +1,18 @@
 /**
  * InitiatorFlow.tsx
- * Vapor PWA - Complete Initiator Connection Flow
+ * Vapor PWA - Initiator Connection Flow (Copy/Paste UX)
  *
  * Alice's flow:
- * 1. Generate and display initial QR (public keys)
- * 2. Wait for Bob to scan it
- * 3. Scan Bob's offer QR
- * 4. Display answer QR for Bob to scan
- * 5. Connection established
+ * 1. Generate and copy invite code
+ * 2. Paste Bob's response code
+ * 3. Copy final answer code for Bob
+ * 4. Connection established
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import QRCode from 'qrcode';
-import { Scanner } from '@yudiel/react-qr-scanner';
-import type { IDetectedBarcode } from '@yudiel/react-qr-scanner';
+import { useEffect, useState, useCallback } from 'react';
 import { useSessionStore } from '../store/sessionStore';
-import { decodeDebugLog } from '../crypto/SignalingPayload';
 
-type FlowStep = 'generating' | 'showing_qr' | 'scanning_offer' | 'showing_answer' | 'connecting';
+type FlowStep = 'generating' | 'showing_invite' | 'waiting_response' | 'showing_answer' | 'connecting';
 
 interface InitiatorFlowProps {
   onCancel: () => void;
@@ -25,25 +20,22 @@ interface InitiatorFlowProps {
 }
 
 export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [step, setStep] = useState<FlowStep>('generating');
-  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [shareStatus, setShareStatus] = useState<'idle' | 'shared' | 'saved' | 'error'>('idle');
+  const [copied, setCopied] = useState(false);
+  const [pasteValue, setPasteValue] = useState('');
 
   const {
     state: sessionState,
     qrString,
     signalingQrString,
-    qrExpirySeconds,
     isQuantumSecure,
     generateQR,
-    updateQRExpiry,
     processOfferQR,
     destroySession,
   } = useSessionStore();
 
-  // Generate initial QR on mount
+  // Generate initial invite on mount
   useEffect(() => {
     generateQR();
   }, [generateQR]);
@@ -51,9 +43,10 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
   // Update local step based on session state
   useEffect(() => {
     if (sessionState === 'waiting') {
-      setStep('showing_qr');
+      setStep('showing_invite');
     } else if (sessionState === 'showing_answer') {
       setStep('showing_answer');
+      setCopied(false);
     } else if (sessionState === 'connecting') {
       setStep('connecting');
     } else if (sessionState === 'active') {
@@ -63,367 +56,200 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
     }
   }, [sessionState, onComplete]);
 
-  // Update expiry countdown for initial QR
-  useEffect(() => {
-    if (step === 'showing_qr') {
-      const interval = setInterval(() => {
-        updateQRExpiry();
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [step, updateQRExpiry]);
-
-  // Render initial QR code
-  useEffect(() => {
-    if (qrString && canvasRef.current && step === 'showing_qr') {
-      QRCode.toCanvas(canvasRef.current, qrString, {
-        width: 280,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' },
-        errorCorrectionLevel: 'L',
-      });
-    }
-  }, [qrString, step]);
-
-  // Render answer QR code
-  useEffect(() => {
-    if (signalingQrString && canvasRef.current && step === 'showing_answer') {
-      QRCode.toCanvas(canvasRef.current, signalingQrString, {
-        width: 280,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' },
-        errorCorrectionLevel: 'L',
-      });
-    }
-  }, [signalingQrString, step]);
-
-  const handleStartScanOffer = () => {
-    setStep('scanning_offer');
-    setScanning(true);
-    setError(null);
-  };
-
-  const handleScanOffer = useCallback(async (detectedCodes: IDetectedBarcode[]) => {
-    if (!scanning || detectedCodes.length === 0) return;
-
-    const qrData = detectedCodes[0].rawValue;
-    if (!qrData) return;
-
-    setScanning(false);
-    setError(null);
-
+  const handleCopyInvite = useCallback(async () => {
+    if (!qrString) return;
     try {
-      setError(`Scanned ${qrData.length} chars, processing...`);
-      const result = await processOfferQR(qrData);
+      await navigator.clipboard.writeText(qrString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Failed to copy to clipboard');
+    }
+  }, [qrString]);
+
+  const handleCopyAnswer = useCallback(async () => {
+    if (!signalingQrString) return;
+    try {
+      await navigator.clipboard.writeText(signalingQrString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Failed to copy to clipboard');
+    }
+  }, [signalingQrString]);
+
+  const handlePasteResponse = useCallback(async () => {
+    if (!pasteValue.trim()) {
+      setError('Please paste the response code');
+      return;
+    }
+
+    setError(null);
+    try {
+      const result = await processOfferQR(pasteValue.trim());
       if (!result) {
         const storeError = useSessionStore.getState().error;
-        const debugInfo = decodeDebugLog.join(' | ');
-        setError(`Failed: ${storeError || 'Unknown'}\n\nDebug: ${debugInfo}`);
-        setScanning(true);
+        setError(storeError || 'Invalid response code');
       }
-      // State change will update step to 'showing_answer'
     } catch (err) {
-      const debugInfo = decodeDebugLog.join(' | ');
-      setError(`Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug: ${debugInfo}`);
-      setScanning(true);
+      setError(err instanceof Error ? err.message : 'Failed to process response');
     }
-  }, [scanning, processOfferQR]);
-
-  const handleScanError = useCallback((err: unknown) => {
-    console.error('Scanner error:', err);
-    setError('Camera access denied or not available');
-  }, []);
+  }, [pasteValue, processOfferQR]);
 
   const handleCancel = () => {
     destroySession();
     onCancel();
   };
 
-  const handleBackToQR = () => {
-    setStep('showing_qr');
-    setScanning(false);
+  const handleNextStep = () => {
+    setStep('waiting_response');
+    setPasteValue('');
     setError(null);
   };
 
-  // Debug: paste QR data manually for desktop testing
-  const handlePasteQR = async () => {
-    const qrData = prompt('ALICE Step 2: Paste Bob\'s OFFER QR here (from Bob Step 2):');
-    if (!qrData) return;
-
-    setError(`[Step 2] Pasted ${qrData.length} chars, processing as OFFER...`);
-    try {
-      const result = await processOfferQR(qrData.trim());
-      if (!result) {
-        const storeError = useSessionStore.getState().error;
-        const debugInfo = decodeDebugLog.join('\n');
-        setError(`[Step 2 OFFER] Failed: ${storeError || 'Unknown'}\n\nDebug:\n${debugInfo}`);
-      } else {
-        setError(null); // Clear error on success
-      }
-    } catch (err) {
-      const debugInfo = decodeDebugLog.join('\n');
-      setError(`[Step 2 OFFER] Exception: ${err instanceof Error ? err.message : String(err)}\n\nDebug:\n${debugInfo}`);
-    }
-  };
-
-  /**
-   * Convert canvas to blob for sharing
-   */
-  const getQRImageBlob = useCallback(async (): Promise<Blob | null> => {
-    if (!canvasRef.current) return null;
-
-    return new Promise((resolve) => {
-      canvasRef.current!.toBlob((blob) => {
-        resolve(blob);
-      }, 'image/png');
-    });
-  }, []);
-
-  /**
-   * Share QR code image via Web Share API or download
-   */
-  const handleShare = async () => {
-    if (!canvasRef.current) return;
-
-    const blob = await getQRImageBlob();
-    if (!blob) {
-      setShareStatus('error');
-      setTimeout(() => setShareStatus('idle'), 3000);
-      return;
-    }
-
-    // Create file for sharing
-    const file = new File([blob], 'vapor-invite.png', { type: 'image/png' });
-
-    // Try Web Share API with file only (no text to avoid duplicate clipboard entries)
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-        });
-        setShareStatus('shared');
-        setTimeout(() => setShareStatus('idle'), 3000);
-        return;
-      } catch (err) {
-        // User cancelled or share failed - fall through to download
-        if ((err as Error).name === 'AbortError') {
-          return; // User cancelled, don't show error
-        }
-        console.warn('Web Share failed, falling back to download:', err);
-      }
-    }
-
-    // Fallback: Download the image
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'vapor-invite.png';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    setShareStatus('saved');
-    setTimeout(() => setShareStatus('idle'), 3000);
-  };
-
-  const getShareButtonText = () => {
-    // Check if Web Share API with files is supported
-    if (typeof navigator.canShare === 'function') {
-      const testFile = new File(['test'], 'test.png', { type: 'image/png' });
-      if (navigator.canShare({ files: [testFile] })) {
-        return 'Share QR Code';
-      }
-    }
-    return 'Save QR Code';
-  };
-
-  const getStatusMessage = () => {
-    switch (shareStatus) {
-      case 'shared':
-        return 'QR code shared!';
-      case 'saved':
-        return 'QR code saved!';
-      case 'error':
-        return 'Failed to share';
-      default:
-        return null;
-    }
-  };
-
-  // Debug: copy QR data to clipboard
-  // In Step 1 (showing_qr): copy qrString (INITIAL QR)
-  // In Step 3 (showing_answer): copy signalingQrString (ANSWER QR)
-  const handleCopyQRData = async () => {
-    const data = step === 'showing_answer' ? signalingQrString : qrString;
-    if (!data) return;
-    try {
-      await navigator.clipboard.writeText(data);
-      const label = step === 'showing_answer' ? 'ANSWER QR' : 'INITIAL QR';
-      setError(`Copied ${label} to clipboard!`);
-      setTimeout(() => setError(null), 2000);
-    } catch {
-      setError('Failed to copy');
-    }
-  };
-
   return (
-    <div className="initiator-flow">
-      {/* Debug: Role indicator */}
-      <div style={{ background: '#4CAF50', color: 'white', padding: '8px', borderRadius: '4px', marginBottom: '16px', textAlign: 'center', fontWeight: 'bold' }}>
-        ALICE (Initiator) - You create the invite
-      </div>
-
-      {/* Step 1: Show initial QR */}
-      {step === 'showing_qr' && (
-        <>
-          <div className="qr-header">
-            <h2>Step 1: Share Your QR</h2>
-            <p className="qr-subtitle">
-              Your contact needs to scan this with Vapor
-            </p>
+    <div className="connection-flow">
+      {/* Step 1: Show invite code */}
+      {step === 'showing_invite' && (
+        <div className="flow-step">
+          <div className="step-header">
+            <span className="step-number">1</span>
+            <h2>Copy Your Invite</h2>
           </div>
 
-          <div className="qr-container">
-            {qrString ? (
-              <canvas ref={canvasRef} className="qr-canvas" />
-            ) : (
-              <div className="qr-loading">
-                <div className="spinner" />
-                <p>Generating...</p>
-              </div>
-            )}
-          </div>
+          <p className="step-description">
+            Send this code to your contact via any messenger
+          </p>
 
-          <div className="qr-info">
-            <div className="qr-timer">
-              <span className="timer-icon">~</span>
-              <span className="timer-text">Expires in {qrExpirySeconds}s</span>
+          <div className="code-container">
+            <div className="code-preview">
+              {qrString ? (
+                <code>{qrString.substring(0, 50)}...</code>
+              ) : (
+                <span className="loading">Generating...</span>
+              )}
             </div>
 
-            {isQuantumSecure && (
-              <div className="quantum-badge">
-                <span className="quantum-icon">*</span>
-                <span className="quantum-text">Quantum-Resistant</span>
-              </div>
-            )}
-          </div>
-
-          {/* Share Button */}
-          <div className="share-actions">
             <button
-              className="btn-share"
-              onClick={handleShare}
-              disabled={!qrString || shareStatus !== 'idle'}
+              className="btn-copy"
+              onClick={handleCopyInvite}
+              disabled={!qrString}
             >
-              <ShareIcon />
-              <span>{shareStatus === 'idle' ? getShareButtonText() : getStatusMessage()}</span>
+              <CopyIcon />
+              <span>{copied ? 'Copied!' : 'Copy Invite Code'}</span>
             </button>
           </div>
 
-          <div className="qr-footer">
-            <p className="qr-hint">
-              Share the QR image via iMessage, WhatsApp, Telegram, or any messenger.
-              <br />
-              After they scan it, tap the button below to scan their response.
-            </p>
-          </div>
-
-          <div className="flow-actions">
-            <button className="btn-primary" onClick={handleStartScanOffer}>
-              Scan Their Response
-            </button>
-            <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
-              Copy QR Data (Debug)
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* Step 2: Scan Bob's offer QR */}
-      {step === 'scanning_offer' && (
-        <>
-          <div className="qr-header">
-            <h2>Step 2: Scan Their Response</h2>
-            <p className="qr-subtitle">
-              Point your camera at your contact's QR code
-            </p>
-          </div>
-
-          <div className="scanner-container">
-            {scanning && (
-              <Scanner
-                onScan={handleScanOffer}
-                onError={handleScanError}
-                constraints={{ facingMode: 'environment' }}
-                styles={{
-                  container: { width: '100%', maxWidth: '400px', aspectRatio: '1' },
-                }}
-              />
-            )}
-          </div>
-
-          {error && (
-            <div className="scanner-error">
-              <span className="error-icon">!</span>
-              <span className="error-text">{error}</span>
+          {isQuantumSecure && (
+            <div className="security-badge">
+              <ShieldIcon />
+              <span>Quantum-Resistant Encryption</span>
             </div>
           )}
 
-          <button className="btn-secondary" onClick={handleBackToQR}>
-            Show My QR Again
-          </button>
-
-          <button className="btn-secondary" onClick={handlePasteQR} style={{ marginTop: '10px' }}>
-            Paste Bob's OFFER QR (from Bob's "Copy OFFER QR")
-          </button>
-        </>
+          <div className="flow-actions">
+            <button className="btn-primary" onClick={handleNextStep} disabled={!qrString}>
+              Next: Paste Their Response
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Step 3: Show answer QR */}
-      {step === 'showing_answer' && (
-        <>
-          <div className="qr-header">
-            <h2>Step 3: Show This to Your Contact</h2>
-            <p className="qr-subtitle">
-              They need to scan this to complete the connection
-            </p>
+      {/* Step 2: Paste response code */}
+      {step === 'waiting_response' && (
+        <div className="flow-step">
+          <div className="step-header">
+            <span className="step-number">2</span>
+            <h2>Paste Their Response</h2>
           </div>
 
-          <div className="qr-container">
-            {signalingQrString ? (
-              <canvas ref={canvasRef} className="qr-canvas" />
-            ) : (
-              <div className="qr-loading">
-                <div className="spinner" />
-                <p>Generating...</p>
-              </div>
-            )}
+          <p className="step-description">
+            Your contact will send back a response code
+          </p>
+
+          <div className="paste-container">
+            <textarea
+              className="paste-input"
+              placeholder="Paste the response code here..."
+              value={pasteValue}
+              onChange={(e) => setPasteValue(e.target.value)}
+              rows={4}
+            />
+
+            <button
+              className="btn-primary"
+              onClick={handlePasteResponse}
+              disabled={!pasteValue.trim()}
+            >
+              <CheckIcon />
+              <span>Process Response</span>
+            </button>
           </div>
 
-          <div className="signaling-badge">
-            <span className="signaling-icon">~</span>
-            <span className="signaling-text">WebRTC Answer</span>
-          </div>
+          {error && (
+            <div className="error-message">
+              <span>{error}</span>
+            </div>
+          )}
 
-          <div className="qr-footer">
-            <p className="qr-hint">
-              Once they scan this QR, the secure connection will be established.
-            </p>
-          </div>
-
-          <button className="btn-secondary" onClick={handleCopyQRData} style={{ marginTop: '10px' }}>
-            Copy ANSWER QR (for Bob to paste in "Scan Their Response")
+          <button className="btn-text" onClick={() => setStep('showing_invite')}>
+            ← Back to invite
           </button>
-        </>
+        </div>
+      )}
+
+      {/* Step 3: Show answer code */}
+      {step === 'showing_answer' && (
+        <div className="flow-step">
+          <div className="step-header">
+            <span className="step-number">3</span>
+            <h2>Send Final Code</h2>
+          </div>
+
+          <p className="step-description">
+            Send this final code to complete the connection
+          </p>
+
+          <div className="code-container">
+            <div className="code-preview">
+              {signalingQrString ? (
+                <code>{signalingQrString.substring(0, 50)}...</code>
+              ) : (
+                <span className="loading">Generating...</span>
+              )}
+            </div>
+
+            <button
+              className="btn-copy"
+              onClick={handleCopyAnswer}
+              disabled={!signalingQrString}
+            >
+              <CopyIcon />
+              <span>{copied ? 'Copied!' : 'Copy Final Code'}</span>
+            </button>
+          </div>
+
+          <p className="step-hint">
+            Once they paste this code, the connection will be established automatically.
+          </p>
+        </div>
       )}
 
       {/* Connecting state */}
       {step === 'connecting' && (
-        <div className="connecting-state">
+        <div className="flow-step connecting">
           <div className="spinner" />
-          <h2>Establishing Secure Connection</h2>
+          <h2>Establishing Connection</h2>
           <p>Please wait...</p>
+        </div>
+      )}
+
+      {/* Generating state */}
+      {step === 'generating' && (
+        <div className="flow-step connecting">
+          <div className="spinner" />
+          <h2>Preparing Invite</h2>
+          <p>Generating secure keys...</p>
         </div>
       )}
 
@@ -434,21 +260,27 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
   );
 }
 
-function ShareIcon() {
+function CopyIcon() {
   return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-      <polyline points="16 6 12 2 8 6" />
-      <line x1="12" y1="2" x2="12" y2="15" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
   );
 }

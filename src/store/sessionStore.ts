@@ -42,7 +42,6 @@ import {
   createSignalingAnswer,
   encodeSignalingPayload,
   decodeSignalingPayload,
-  decodeDebugLog,
   isSignalingPayload,
   isValidSignalingPayload,
   isSignalingExpired,
@@ -307,45 +306,30 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
    * Alice receives Bob's WebRTC offer + KEM ciphertext, creates answer QR
    */
   processOfferQR: async (qrString: string) => {
-    console.log('[processOfferQR] Starting, qrString length:', qrString.length);
-    console.log('[processOfferQR] First 100 chars:', qrString.substring(0, 100));
-
     const keyPair = get()._keyPair;
 
     if (!keyPair) {
-      console.error('[processOfferQR] No key pair found');
-      set({ state: 'error', error: 'No key pair - generate QR first' });
+      set({ state: 'error', error: 'Please start over - no keys found' });
       return null;
     }
 
     try {
-      console.log('[processOfferQR] Decoding payload...');
-      let payload: SignalingOffer | null = null;
-      try {
-        payload = decodeSignalingPayload(qrString) as SignalingOffer;
-      } catch (decodeErr) {
-        console.error('[processOfferQR] Decode threw:', decodeErr);
-        throw new Error(`Decode error: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`);
-      }
+      const payload = decodeSignalingPayload(qrString) as SignalingOffer;
 
       if (!payload) {
-        console.error('[processOfferQR] decodeSignalingPayload returned null');
-        throw new Error('Decode returned null - check console for details');
+        throw new Error('Invalid response code');
       }
 
-      console.log('[processOfferQR] Payload type:', payload.type, 'Expected:', SIGNALING_TYPE.OFFER);
-
       if (payload.type !== SIGNALING_TYPE.OFFER) {
-        throw new Error(`Wrong QR type: got ${payload.type}, expected ${SIGNALING_TYPE.OFFER} (offer)`);
+        throw new Error('Wrong code type - expected response code');
       }
 
       if (!isValidSignalingPayload(payload)) {
-        console.error('[processOfferQR] Invalid payload structure');
-        throw new Error('Invalid offer payload structure');
+        throw new Error('Invalid response code format');
       }
 
       if (isSignalingExpired(payload)) {
-        throw new Error('Offer has expired (2 min timeout)');
+        throw new Error('Code has expired');
       }
 
       // Alice decapsulates using Bob's KEM ciphertext
@@ -403,49 +387,37 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
    * Bob receives Alice's WebRTC answer, completes connection
    */
   processAnswerQR: async (qrString: string) => {
-    console.log('[processAnswerQR] Starting, qrString length:', qrString.length);
-
     const webrtc = get()._webrtc;
 
     if (!webrtc) {
-      console.error('[processAnswerQR] No WebRTC instance found');
-      set({ state: 'error', error: 'No WebRTC connection - Bob needs to complete Step 1 first' });
+      set({ state: 'error', error: 'Please start over - connection not ready' });
       return false;
     }
 
     try {
-      console.log('[processAnswerQR] Decoding payload...');
       const payload = decodeSignalingPayload(qrString) as SignalingAnswer;
 
       if (!payload) {
-        console.error('[processAnswerQR] Failed to decode payload');
-        const debugInfo = decodeDebugLog.join(' | ');
-        throw new Error(`Invalid ANSWER QR. Debug: ${debugInfo}`);
+        throw new Error('Invalid final code');
       }
 
       if (payload.type !== SIGNALING_TYPE.ANSWER) {
-        console.error('[processAnswerQR] Wrong payload type:', payload.type);
-        throw new Error('Wrong QR type - expected answer, got offer');
+        throw new Error('Wrong code type - expected final code');
       }
 
       if (isSignalingExpired(payload)) {
-        console.error('[processAnswerQR] Payload expired');
-        throw new Error('Answer has expired (2 min timeout)');
+        throw new Error('Code has expired');
       }
 
-      console.log('[processAnswerQR] Completing WebRTC connection...');
-      // Complete WebRTC connection with answer
       const answerJson = JSON.stringify({ type: 'answer', sdp: payload.sdp });
       await webrtc.completeConnection(answerJson);
 
-      console.log('[processAnswerQR] Success, setting state to connecting');
       set({ state: 'connecting' });
       return true;
     } catch (error) {
-      console.error('[processAnswerQR] Error:', error);
       set({
         state: 'error',
-        error: error instanceof Error ? error.message : 'Failed to process answer',
+        error: error instanceof Error ? error.message : 'Failed to complete connection',
       });
       return false;
     }
