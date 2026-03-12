@@ -51,6 +51,8 @@ import type { SignalingOffer, SignalingAnswer } from '../crypto/SignalingPayload
 import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
 import type { ConnectionState } from '../crypto/WebRTCChannel';
 import { WebRTCChannel } from '../crypto/WebRTCChannel';
+import { generateSafetyNumber, formatSafetyNumber } from '../crypto/SafetyNumber';
+import { getCombinedPublicKey } from '../crypto/HybridKeyPair';
 
 export interface Message {
   id: string;
@@ -86,9 +88,12 @@ interface SessionStore {
   qrExpirySeconds: number;
   connectionState: ConnectionState;
   isQuantumSecure: boolean;
+  safetyNumber: string | null;        // Human-readable safety number for MITM verification
+  safetyNumberVerified: boolean;      // Whether user has verified the safety number
 
   // Internal (not exposed directly)
   _keyPair: HybridKeyPairData | null;
+  _peerPublicKeys: Uint8Array | null; // Store peer's public keys for safety number
   _sessionKey: Uint8Array | null;
   _webrtc: WebRTCChannel | null;
   _consumedNonces: Set<string>;
@@ -104,6 +109,9 @@ interface SessionStore {
   // Two-way QR signaling actions
   processOfferQR: (qrString: string) => Promise<{ answerQr: string } | null>;
   processAnswerQR: (qrString: string) => Promise<boolean>;
+
+  // Safety number verification
+  verifySafetyNumber: () => void;
 
   // Legacy (kept for compatibility)
   completeSession: (answerJson: string) => Promise<void>;
@@ -127,8 +135,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   qrExpirySeconds: 60,
   connectionState: 'disconnected',
   isQuantumSecure: false,
+  safetyNumber: null,
+  safetyNumberVerified: false,
 
   _keyPair: null,
+  _peerPublicKeys: null,
   _sessionKey: null,
   _webrtc: null,
   _consumedNonces: new Set(),
@@ -250,15 +261,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Mark nonce as consumed
       get()._consumedNonces.add(nonceHex);
 
+      // Store peer's (Alice's) public keys for safety number generation
+      const peerPublicKeys = getCombinedPublicKey({
+        classical: payload.classicalPublicKey,
+        pq: payload.pqPublicKey,
+      });
+
       // Initialize WebRTC as initiator (Bob creates the offer)
       const webrtc = new WebRTCChannel({
         onMessage: (data) => {
           get()._handleIncomingMessage(data);
         },
-        onStateChange: (state) => {
+        onStateChange: async (state) => {
           set({ connectionState: state });
           if (state === 'connected') {
-            set({ state: 'active' });
+            // Generate safety number when connected
+            const { _keyPair, _peerPublicKeys } = get();
+            if (_keyPair && _peerPublicKeys) {
+              const localKeys = getCombinedPublicKey(_keyPair.publicKey);
+              const safetyNumber = await generateSafetyNumber(localKeys, _peerPublicKeys);
+              set({ state: 'active', safetyNumber: formatSafetyNumber(safetyNumber) });
+            } else {
+              set({ state: 'active' });
+            }
           } else if (state === 'failed') {
             set({ state: 'error', error: 'Connection failed' });
           }
@@ -285,6 +310,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         state: 'showing_offer',
         role: 'responder',
         _keyPair: ourKeyPair,
+        _peerPublicKeys: peerPublicKeys,
         _sessionKey: result.sharedSecret,
         _webrtc: webrtc,
         signalingQrString: offerQr,
@@ -339,15 +365,28 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         payload.kemCiphertext
       );
 
+      // Store Bob's public keys for safety number (classical only from signaling offer)
+      // Note: Bob's full PQ key was used for encapsulation but we only have classical here
+      // We'll use the classical key + KEM ciphertext as a proxy for Bob's identity
+      const peerPublicKeys = new Uint8Array([...payload.classicalPublicKey, ...payload.kemCiphertext.slice(0, 32)]);
+
       // Initialize WebRTC as responder
       const webrtc = new WebRTCChannel({
         onMessage: (data) => {
           get()._handleIncomingMessage(data);
         },
-        onStateChange: (state) => {
+        onStateChange: async (state) => {
           set({ connectionState: state });
           if (state === 'connected') {
-            set({ state: 'active' });
+            // Generate safety number when connected
+            const { _keyPair, _peerPublicKeys } = get();
+            if (_keyPair && _peerPublicKeys) {
+              const localKeys = getCombinedPublicKey(_keyPair.publicKey);
+              const safetyNumber = await generateSafetyNumber(localKeys, _peerPublicKeys);
+              set({ state: 'active', safetyNumber: formatSafetyNumber(safetyNumber) });
+            } else {
+              set({ state: 'active' });
+            }
           } else if (state === 'failed') {
             set({ state: 'error', error: 'Connection failed' });
           }
@@ -367,6 +406,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       set({
         state: 'showing_answer',
         _sessionKey: sessionKey,
+        _peerPublicKeys: peerPublicKeys,
         _webrtc: webrtc,
         signalingQrString: answerQr,
         isQuantumSecure: true,
@@ -508,6 +548,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
+   * Mark safety number as verified by user
+   */
+  verifySafetyNumber: () => {
+    set({ safetyNumberVerified: true });
+  },
+
+  /**
    * Destroy the session and all cryptographic material
    */
   destroySession: () => {
@@ -540,7 +587,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       qrExpirySeconds: 60,
       connectionState: 'disconnected',
       isQuantumSecure: false,
+      safetyNumber: null,
+      safetyNumberVerified: false,
       _keyPair: null,
+      _peerPublicKeys: null,
       _sessionKey: null,
       _webrtc: null,
       _pendingKemCiphertext: null,

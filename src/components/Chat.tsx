@@ -4,6 +4,7 @@
  *
  * Displays messages and provides input for sending new messages.
  * All messages are encrypted with ChaCha20-Poly1305 before sending.
+ * Includes safety number display for MITM verification.
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -16,6 +17,7 @@ interface ChatProps {
 
 export function Chat({ onEndSession }: ChatProps) {
   const [input, setInput] = useState('');
+  const [showSafetyNumber, setShowSafetyNumber] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -24,6 +26,9 @@ export function Chat({ onEndSession }: ChatProps) {
     destroySession,
     connectionState,
     isQuantumSecure,
+    safetyNumber,
+    safetyNumberVerified,
+    verifySafetyNumber,
   } = useSessionStore();
 
   // Auto-scroll to bottom on new messages
@@ -72,17 +77,77 @@ export function Chat({ onEndSession }: ChatProps) {
           </span>
         </div>
 
-        {isQuantumSecure && (
-          <div className="quantum-indicator">
-            <span className="quantum-icon">🛡</span>
-            <span className="quantum-label">PQ</span>
-          </div>
-        )}
+        <div className="header-actions">
+          {safetyNumber && (
+            <button
+              className={`btn-verify ${safetyNumberVerified ? 'verified' : ''}`}
+              onClick={() => setShowSafetyNumber(true)}
+              title="Verify safety number"
+            >
+              <ShieldIcon />
+              {safetyNumberVerified ? 'Verified' : 'Verify'}
+            </button>
+          )}
 
-        <button className="btn-end" onClick={handleEndSession}>
-          End Session
-        </button>
+          <button className="btn-end" onClick={handleEndSession}>
+            End
+          </button>
+        </div>
       </div>
+
+      {/* Safety Number Modal */}
+      {showSafetyNumber && safetyNumber && (
+        <div className="safety-modal-overlay" onClick={() => setShowSafetyNumber(false)}>
+          <div className="safety-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="safety-header">
+              <ShieldIcon />
+              <h3>Safety Number</h3>
+            </div>
+
+            <p className="safety-description">
+              Compare this with your contact. If the numbers match, your connection is secure and not intercepted.
+            </p>
+
+            <div className="safety-number">
+              {safetyNumber}
+            </div>
+
+            <div className="safety-instructions">
+              <p>Read this aloud on a phone call, or compare in person.</p>
+              <p className="safety-warning">
+                If the numbers don't match, someone may be intercepting your messages.
+              </p>
+            </div>
+
+            <div className="safety-actions">
+              {!safetyNumberVerified ? (
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    verifySafetyNumber();
+                    setShowSafetyNumber(false);
+                  }}
+                >
+                  <CheckIcon />
+                  Mark as Verified
+                </button>
+              ) : (
+                <div className="verified-badge">
+                  <CheckIcon />
+                  Verified
+                </div>
+              )}
+
+              <button
+                className="btn-text"
+                onClick={() => setShowSafetyNumber(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="chat-messages">
         {messages.length === 0 ? (
@@ -95,8 +160,17 @@ export function Chat({ onEndSession }: ChatProps) {
             </p>
             {isQuantumSecure && (
               <p className="empty-security">
-                🛡 Protected by X25519 + ML-KEM-768
+                Protected by X25519 + ML-KEM-768
               </p>
+            )}
+            {safetyNumber && !safetyNumberVerified && (
+              <button
+                className="btn-verify-prompt"
+                onClick={() => setShowSafetyNumber(true)}
+              >
+                <ShieldIcon />
+                Verify your connection is secure
+              </button>
             )}
           </div>
         ) : (
@@ -159,6 +233,40 @@ function SendIcon() {
     >
       <line x1="22" y1="2" x2="11" y2="13" />
       <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="20 6 9 17 4 12" />
     </svg>
   );
 }
