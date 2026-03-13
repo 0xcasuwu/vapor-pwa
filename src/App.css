@@ -1820,6 +1820,75 @@ body {
 }
 
 /* ============================================
+   ICE DIAGNOSTICS PANEL
+   ============================================ */
+.ice-diagnostics {
+  width: 100%;
+  margin-top: 24px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-align: left;
+}
+
+.ice-diagnostics .diag-title {
+  color: var(--neon-cyan);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ice-diagnostics .diag-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: var(--color-text-muted);
+}
+
+.ice-diagnostics .diag-row span:last-child {
+  color: var(--color-text);
+}
+
+.ice-diagnostics .diag-state {
+  text-transform: capitalize;
+}
+
+.ice-diagnostics .diag-state.checking,
+.ice-diagnostics .diag-state.new {
+  color: var(--color-warning);
+}
+
+.ice-diagnostics .diag-state.connected,
+.ice-diagnostics .diag-state.completed {
+  color: var(--color-success);
+}
+
+.ice-diagnostics .diag-state.failed,
+.ice-diagnostics .diag-state.disconnected {
+  color: var(--color-error);
+}
+
+.ice-diagnostics .diag-success {
+  color: var(--color-success) !important;
+}
+
+.ice-diagnostics .diag-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 51, 102, 0.1);
+  border: 1px solid rgba(255, 51, 102, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--color-error);
+  font-size: 0.65rem;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 @media (min-width: 768px) {

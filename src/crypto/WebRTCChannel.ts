@@ -21,10 +21,27 @@ export interface SignalingData {
   payload: RTCSessionDescriptionInit | RTCIceCandidateInit;
 }
 
+/**
+ * ICE diagnostics for debugging connection issues
+ */
+export interface IceDiagnostics {
+  gatheringState: RTCIceGatheringState | 'unknown';
+  connectionState: RTCIceConnectionState | 'unknown';
+  candidateTypes: {
+    host: number;      // Local network candidates
+    srflx: number;     // STUN candidates (server reflexive)
+    relay: number;     // TURN candidates (relay)
+    prflx: number;     // Peer reflexive
+  };
+  selectedPair: string | null;
+  errorMessage: string | null;
+}
+
 export interface WebRTCChannelOptions {
   onMessage: (data: Uint8Array) => void;
   onStateChange: (state: ConnectionState) => void;
   onSignalingData: (data: SignalingData) => void;
+  onIceDiagnostics?: (diagnostics: IceDiagnostics) => void;
 }
 
 /**
@@ -36,11 +53,41 @@ export class WebRTCChannel {
   private options: WebRTCChannelOptions;
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private state: ConnectionState = 'disconnected';
+  private diagnostics: IceDiagnostics = {
+    gatheringState: 'unknown',
+    connectionState: 'unknown',
+    candidateTypes: { host: 0, srflx: 0, relay: 0, prflx: 0 },
+    selectedPair: null,
+    errorMessage: null,
+  };
 
-  // STUN servers for NAT traversal (no TURN = no relay = more private)
+  // ICE servers for NAT traversal
+  // STUN: Discovers public IP (free, no relay)
+  // TURN: Relays traffic when direct connection fails (needed for ~20% of connections)
   private static readonly ICE_SERVERS: RTCIceServer[] = [
+    // Google STUN servers (free)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    // Twilio STUN (backup)
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    // Free TURN servers from Open Relay Project (for NAT traversal when STUN fails)
+    // These are public and may have limited capacity
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ];
 
   constructor(options: WebRTCChannelOptions) {
@@ -194,6 +241,21 @@ export class WebRTCChannel {
   }
 
   /**
+   * Get ICE diagnostics for debugging
+   */
+  getDiagnostics(): IceDiagnostics {
+    return { ...this.diagnostics };
+  }
+
+  /**
+   * Update and emit diagnostics
+   */
+  private updateDiagnostics(partial: Partial<IceDiagnostics>): void {
+    this.diagnostics = { ...this.diagnostics, ...partial };
+    this.options.onIceDiagnostics?.(this.diagnostics);
+  }
+
+  /**
    * Wait for ICE gathering to complete
    * This ensures all ICE candidates are embedded in the local SDP
    */
@@ -204,30 +266,85 @@ export class WebRTCChannel {
         return;
       }
 
+      console.log('[ICE] Starting ICE gathering, current state:', this.pc.iceGatheringState);
+
       // Already complete
       if (this.pc.iceGatheringState === 'complete') {
+        this.logIceCandidates();
         resolve();
         return;
       }
 
       // Wait for gathering to complete
       const checkState = () => {
+        console.log('[ICE] Gathering state changed:', this.pc?.iceGatheringState);
         if (this.pc?.iceGatheringState === 'complete') {
           this.pc.removeEventListener('icegatheringstatechange', checkState);
+          this.logIceCandidates();
           resolve();
         }
       };
 
       this.pc.addEventListener('icegatheringstatechange', checkState);
 
-      // Timeout after 10 seconds to prevent hanging
+      // Timeout after 15 seconds to prevent hanging (increased for TURN)
       setTimeout(() => {
         if (this.pc) {
+          console.log('[ICE] Gathering timeout, proceeding with available candidates');
           this.pc.removeEventListener('icegatheringstatechange', checkState);
+          this.logIceCandidates();
         }
         resolve();
-      }, 10000);
+      }, 15000);
     });
+  }
+
+  /**
+   * Log ICE candidates and update diagnostics
+   */
+  private logIceCandidates(): void {
+    if (!this.pc?.localDescription?.sdp) return;
+
+    const sdp = this.pc.localDescription.sdp;
+    const candidates = sdp.split('\n').filter(line => line.startsWith('a=candidate:'));
+
+    // Count candidate types
+    const candidateTypes = { host: 0, srflx: 0, relay: 0, prflx: 0 };
+
+    console.log('[ICE] Gathered candidates:');
+    candidates.forEach((c, i) => {
+      let type: string;
+      if (c.includes('typ host')) {
+        type = 'HOST';
+        candidateTypes.host++;
+      } else if (c.includes('typ srflx')) {
+        type = 'SRFLX (STUN)';
+        candidateTypes.srflx++;
+      } else if (c.includes('typ relay')) {
+        type = 'RELAY (TURN)';
+        candidateTypes.relay++;
+      } else if (c.includes('typ prflx')) {
+        type = 'PRFLX';
+        candidateTypes.prflx++;
+      } else {
+        type = 'UNKNOWN';
+      }
+      console.log(`  ${i + 1}. ${type}: ${c.substring(0, 80)}...`);
+    });
+
+    // Update diagnostics
+    this.updateDiagnostics({
+      candidateTypes,
+      gatheringState: this.pc.iceGatheringState,
+    });
+
+    if (candidates.length === 0) {
+      console.warn('[ICE] No candidates gathered! Connection will likely fail.');
+      this.updateDiagnostics({ errorMessage: 'No ICE candidates gathered - check network/firewall' });
+    } else if (candidateTypes.srflx === 0 && candidateTypes.relay === 0) {
+      console.warn('[ICE] Only local candidates - may fail across networks');
+      this.updateDiagnostics({ errorMessage: 'Only local candidates - STUN/TURN may be blocked' });
+    }
   }
 
   /**
@@ -250,8 +367,10 @@ export class WebRTCChannel {
 
     // Handle connection state changes
     this.pc.onconnectionstatechange = () => {
+      console.log('[WebRTC] Connection state:', this.pc?.connectionState);
       switch (this.pc?.connectionState) {
         case 'connected':
+          this.updateSelectedCandidatePair();
           this.setState('connected');
           break;
         case 'disconnected':
@@ -259,6 +378,7 @@ export class WebRTCChannel {
           this.setState('disconnected');
           break;
         case 'failed':
+          this.updateDiagnostics({ errorMessage: 'WebRTC connection failed - peers cannot reach each other' });
           this.setState('failed');
           break;
       }
@@ -266,10 +386,58 @@ export class WebRTCChannel {
 
     // Handle ICE connection state (more granular)
     this.pc.oniceconnectionstatechange = () => {
-      if (this.pc?.iceConnectionState === 'failed') {
+      const iceState = this.pc?.iceConnectionState;
+      console.log('[ICE] Connection state:', iceState);
+      this.updateDiagnostics({ connectionState: iceState || 'unknown' });
+
+      if (iceState === 'failed') {
+        this.updateDiagnostics({ errorMessage: 'ICE connection failed - NAT traversal unsuccessful' });
         this.setState('failed');
+      } else if (iceState === 'checking') {
+        this.updateDiagnostics({ errorMessage: null });
       }
     };
+
+    // Handle ICE gathering state
+    this.pc.onicegatheringstatechange = () => {
+      console.log('[ICE] Gathering state:', this.pc?.iceGatheringState);
+      this.updateDiagnostics({ gatheringState: this.pc?.iceGatheringState || 'unknown' });
+    };
+  }
+
+  /**
+   * Get info about the selected candidate pair (after connection)
+   */
+  private async updateSelectedCandidatePair(): Promise<void> {
+    if (!this.pc) return;
+
+    try {
+      const stats = await this.pc.getStats();
+      stats.forEach((report) => {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          const localCandidateId = report.localCandidateId;
+          const remoteCandidateId = report.remoteCandidateId;
+
+          let localType = 'unknown';
+          let remoteType = 'unknown';
+
+          stats.forEach((r) => {
+            if (r.id === localCandidateId) {
+              localType = r.candidateType || 'unknown';
+            }
+            if (r.id === remoteCandidateId) {
+              remoteType = r.candidateType || 'unknown';
+            }
+          });
+
+          const selectedPair = `${localType} ↔ ${remoteType}`;
+          console.log('[ICE] Selected pair:', selectedPair);
+          this.updateDiagnostics({ selectedPair, errorMessage: null });
+        }
+      });
+    } catch (e) {
+      console.warn('[ICE] Could not get stats:', e);
+    }
   }
 
   /**

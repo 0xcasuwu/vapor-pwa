@@ -49,7 +49,7 @@ import {
 } from '../crypto/SignalingPayload';
 import type { SignalingOffer, SignalingAnswer } from '../crypto/SignalingPayload';
 import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
-import type { ConnectionState } from '../crypto/WebRTCChannel';
+import type { ConnectionState, IceDiagnostics } from '../crypto/WebRTCChannel';
 import { WebRTCChannel } from '../crypto/WebRTCChannel';
 import { generateSafetyNumber, formatSafetyNumber } from '../crypto/SafetyNumber';
 import { getCombinedPublicKey } from '../crypto/HybridKeyPair';
@@ -90,6 +90,7 @@ interface SessionStore {
   isQuantumSecure: boolean;
   safetyNumber: string | null;        // Human-readable safety number for MITM verification
   safetyNumberVerified: boolean;      // Whether user has verified the safety number
+  iceDiagnostics: IceDiagnostics | null;  // ICE connection diagnostics for debugging
 
   // Internal (not exposed directly)
   _keyPair: HybridKeyPairData | null;
@@ -137,6 +138,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   isQuantumSecure: false,
   safetyNumber: null,
   safetyNumberVerified: false,
+  iceDiagnostics: null,
 
   _keyPair: null,
   _peerPublicKeys: null,
@@ -285,11 +287,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               set({ state: 'active' });
             }
           } else if (state === 'failed') {
-            set({ state: 'error', error: 'Connection failed' });
+            const diagnostics = get().iceDiagnostics;
+            const errorDetail = diagnostics?.errorMessage || 'Connection failed';
+            set({ state: 'error', error: errorDetail });
           }
         },
         onSignalingData: () => {
           // ICE candidates handled in signaling QR
+        },
+        onIceDiagnostics: (diagnostics) => {
+          set({ iceDiagnostics: diagnostics });
         },
       });
 
@@ -388,10 +395,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               set({ state: 'active' });
             }
           } else if (state === 'failed') {
-            set({ state: 'error', error: 'Connection failed' });
+            const diagnostics = get().iceDiagnostics;
+            const errorDetail = diagnostics?.errorMessage || 'Connection failed';
+            set({ state: 'error', error: errorDetail });
           }
         },
         onSignalingData: () => {},
+        onIceDiagnostics: (diagnostics) => {
+          set({ iceDiagnostics: diagnostics });
+        },
       });
 
       // Create answer from offer
@@ -589,6 +601,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       isQuantumSecure: false,
       safetyNumber: null,
       safetyNumberVerified: false,
+      iceDiagnostics: null,
       _keyPair: null,
       _peerPublicKeys: null,
       _sessionKey: null,

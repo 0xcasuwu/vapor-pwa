@@ -30,6 +30,7 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
     state: sessionState,
     signalingQrString,
     isQuantumSecure,
+    iceDiagnostics,
     scanQR,
     processAnswerQR,
     destroySession,
@@ -244,6 +245,7 @@ export function ResponderFlow({ onCancel, onComplete }: ResponderFlowProps) {
           <div className="spinner" />
           <h2>Establishing Connection</h2>
           <p>Please wait...</p>
+          {iceDiagnostics && <IceDiagnosticsPanel diagnostics={iceDiagnostics} />}
         </div>
       )}
 
@@ -276,5 +278,49 @@ function ShieldIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
+  );
+}
+
+interface IceDiagnosticsPanelProps {
+  diagnostics: {
+    gatheringState: string;
+    connectionState: string;
+    candidateTypes: { host: number; srflx: number; relay: number; prflx: number };
+    selectedPair: string | null;
+    errorMessage: string | null;
+  };
+}
+
+function IceDiagnosticsPanel({ diagnostics }: IceDiagnosticsPanelProps) {
+  const { candidateTypes, connectionState, selectedPair, errorMessage } = diagnostics;
+  const totalCandidates = candidateTypes.host + candidateTypes.srflx + candidateTypes.relay + candidateTypes.prflx;
+
+  return (
+    <div className="ice-diagnostics">
+      <div className="diag-title">Connection Diagnostics</div>
+      <div className="diag-row">
+        <span>ICE State:</span>
+        <span className={`diag-state ${connectionState}`}>{connectionState}</span>
+      </div>
+      <div className="diag-row">
+        <span>Candidates:</span>
+        <span>
+          {totalCandidates} total
+          {candidateTypes.host > 0 && ` (${candidateTypes.host} local`}
+          {candidateTypes.srflx > 0 && `, ${candidateTypes.srflx} STUN`}
+          {candidateTypes.relay > 0 && `, ${candidateTypes.relay} TURN`}
+          {candidateTypes.host > 0 && ')'}
+        </span>
+      </div>
+      {selectedPair && (
+        <div className="diag-row">
+          <span>Connected via:</span>
+          <span className="diag-success">{selectedPair}</span>
+        </div>
+      )}
+      {errorMessage && (
+        <div className="diag-error">{errorMessage}</div>
+      )}
+    </div>
   );
 }
