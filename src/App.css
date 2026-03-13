@@ -898,6 +898,31 @@ body {
   gap: 12px;
 }
 
+.safety-actions .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 24px;
+  background: transparent;
+  border: 1px solid var(--neon-cyan);
+  border-radius: var(--radius-md);
+  color: var(--neon-cyan);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: var(--glow-text-cyan);
+}
+
+.safety-actions .btn-primary:hover {
+  background: rgba(0, 255, 242, 0.1);
+  box-shadow: var(--glow-cyan);
+}
+
 .verified-badge {
   display: flex;
   align-items: center;

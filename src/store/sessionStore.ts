@@ -52,7 +52,7 @@ import { encrypt, decrypt, destroyKey } from '../crypto/Encryption';
 import type { ConnectionState, IceDiagnostics } from '../crypto/WebRTCChannel';
 import { WebRTCChannel } from '../crypto/WebRTCChannel';
 import { generateSafetyNumber, formatSafetyNumber } from '../crypto/SafetyNumber';
-import { getCombinedPublicKey } from '../crypto/HybridKeyPair';
+// getCombinedPublicKey removed - we use only classical keys for safety numbers
 
 export interface Message {
   id: string;
@@ -263,11 +263,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Mark nonce as consumed
       get()._consumedNonces.add(nonceHex);
 
-      // Store peer's (Alice's) public keys for safety number generation
-      const peerPublicKeys = getCombinedPublicKey({
-        classical: payload.classicalPublicKey,
-        pq: payload.pqPublicKey,
-      });
+      // Store peer's (Alice's) classical public key for safety number generation
+      // We use only classical keys for safety numbers since that's what both sides have
+      const peerPublicKeys = payload.classicalPublicKey;
 
       // Initialize WebRTC as initiator (Bob creates the offer)
       const webrtc = new WebRTCChannel({
@@ -278,10 +276,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           set({ connectionState: state });
           if (state === 'connected') {
             // Generate safety number when connected
+            // Use only classical keys for safety numbers (both sides have these)
             const { _keyPair, _peerPublicKeys } = get();
             if (_keyPair && _peerPublicKeys) {
-              const localKeys = getCombinedPublicKey(_keyPair.publicKey);
-              const safetyNumber = await generateSafetyNumber(localKeys, _peerPublicKeys);
+              const localClassicalKey = _keyPair.publicKey.classical;
+              const safetyNumber = await generateSafetyNumber(localClassicalKey, _peerPublicKeys);
               set({ state: 'active', safetyNumber: formatSafetyNumber(safetyNumber) });
             } else {
               set({ state: 'active' });
@@ -372,10 +371,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         payload.kemCiphertext
       );
 
-      // Store Bob's public keys for safety number (classical only from signaling offer)
-      // Note: Bob's full PQ key was used for encapsulation but we only have classical here
-      // We'll use the classical key + KEM ciphertext as a proxy for Bob's identity
-      const peerPublicKeys = new Uint8Array([...payload.classicalPublicKey, ...payload.kemCiphertext.slice(0, 32)]);
+      // Store Bob's classical public key for safety number generation
+      // We use only classical keys for safety numbers since that's what both sides have
+      const peerPublicKeys = payload.classicalPublicKey;
 
       // Initialize WebRTC as responder
       const webrtc = new WebRTCChannel({
@@ -386,10 +384,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           set({ connectionState: state });
           if (state === 'connected') {
             // Generate safety number when connected
+            // Use only classical keys for safety numbers (both sides have these)
             const { _keyPair, _peerPublicKeys } = get();
             if (_keyPair && _peerPublicKeys) {
-              const localKeys = getCombinedPublicKey(_keyPair.publicKey);
-              const safetyNumber = await generateSafetyNumber(localKeys, _peerPublicKeys);
+              const localClassicalKey = _keyPair.publicKey.classical;
+              const safetyNumber = await generateSafetyNumber(localClassicalKey, _peerPublicKeys);
               set({ state: 'active', safetyNumber: formatSafetyNumber(safetyNumber) });
             } else {
               set({ state: 'active' });
