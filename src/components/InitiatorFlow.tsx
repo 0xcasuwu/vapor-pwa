@@ -242,7 +242,7 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
           <div className="spinner" />
           <h2>Establishing Connection</h2>
           <p>Please wait...</p>
-          {iceDiagnostics && <IceDiagnosticsPanel diagnostics={iceDiagnostics} />}
+          {iceDiagnostics && <IceDiagnosticsPanel diagnostics={iceDiagnostics} showDetails={true} />}
         </div>
       )}
 
@@ -252,6 +252,21 @@ export function InitiatorFlow({ onCancel, onComplete }: InitiatorFlowProps) {
           <div className="spinner" />
           <h2>Preparing Invite</h2>
           <p>Generating secure keys...</p>
+        </div>
+      )}
+
+      {/* Global error display with diagnostics */}
+      {error && step !== 'waiting_response' && (
+        <div className="flow-error-panel">
+          <div className="error-header">
+            <ErrorIcon />
+            <h3>Connection Failed</h3>
+          </div>
+          <p className="error-detail">{error}</p>
+          {iceDiagnostics && <IceDiagnosticsPanel diagnostics={iceDiagnostics} showDetails={true} />}
+          <button className="btn-primary" onClick={handleCancel}>
+            Start Over
+          </button>
         </div>
       )}
 
@@ -287,6 +302,16 @@ function ShieldIcon() {
   );
 }
 
+function ErrorIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  );
+}
+
 interface IceDiagnosticsPanelProps {
   diagnostics: {
     gatheringState: string;
@@ -297,35 +322,83 @@ interface IceDiagnosticsPanelProps {
   };
 }
 
-function IceDiagnosticsPanel({ diagnostics }: IceDiagnosticsPanelProps) {
+function IceDiagnosticsPanel({ diagnostics, showDetails = false }: IceDiagnosticsPanelProps & { showDetails?: boolean }) {
   const { candidateTypes, connectionState, gatheringState, selectedPair, errorMessage } = diagnostics;
   const totalCandidates = candidateTypes.host + candidateTypes.srflx + candidateTypes.relay + candidateTypes.prflx;
+
+  // Determine status and warnings
+  const hasStunOrTurn = candidateTypes.srflx > 0 || candidateTypes.relay > 0;
+  const onlyLocal = totalCandidates > 0 && !hasStunOrTurn;
+  const noCandidates = totalCandidates === 0 && gatheringState === 'complete';
 
   return (
     <div className="ice-diagnostics">
       <div className="diag-title">Connection Diagnostics</div>
+
+      <div className="diag-row">
+        <span>Gathering:</span>
+        <span className={`diag-state ${gatheringState === 'complete' ? 'completed' : 'checking'}`}>
+          {gatheringState}
+        </span>
+      </div>
+
       <div className="diag-row">
         <span>ICE State:</span>
         <span className={`diag-state ${connectionState}`}>{connectionState}</span>
       </div>
+
       <div className="diag-row">
         <span>Candidates:</span>
-        <span>
-          {totalCandidates} total
-          {candidateTypes.host > 0 && ` (${candidateTypes.host} local`}
-          {candidateTypes.srflx > 0 && `, ${candidateTypes.srflx} STUN`}
-          {candidateTypes.relay > 0 && `, ${candidateTypes.relay} TURN`}
-          {candidateTypes.host > 0 && ')'}
-        </span>
+        <span>{totalCandidates} found</span>
       </div>
+
+      {showDetails && totalCandidates > 0 && (
+        <div className="diag-breakdown">
+          {candidateTypes.host > 0 && (
+            <div className="diag-candidate">
+              <span className="diag-dot local" /> {candidateTypes.host} Local
+            </div>
+          )}
+          {candidateTypes.srflx > 0 && (
+            <div className="diag-candidate">
+              <span className="diag-dot stun" /> {candidateTypes.srflx} STUN
+            </div>
+          )}
+          {candidateTypes.relay > 0 && (
+            <div className="diag-candidate">
+              <span className="diag-dot turn" /> {candidateTypes.relay} TURN
+            </div>
+          )}
+          {candidateTypes.prflx > 0 && (
+            <div className="diag-candidate">
+              <span className="diag-dot prflx" /> {candidateTypes.prflx} Peer
+            </div>
+          )}
+        </div>
+      )}
+
       {selectedPair && (
-        <div className="diag-row">
+        <div className="diag-row diag-success-row">
           <span>Connected via:</span>
           <span className="diag-success">{selectedPair}</span>
         </div>
       )}
+
+      {/* Warnings */}
+      {onlyLocal && (
+        <div className="diag-warning">
+          ⚠️ Only local candidates found. STUN/TURN servers may be blocked by firewall. Cross-network connections will likely fail.
+        </div>
+      )}
+
+      {noCandidates && (
+        <div className="diag-error">
+          ❌ No ICE candidates gathered. Check your network connection and firewall settings.
+        </div>
+      )}
+
       {errorMessage && (
-        <div className="diag-error">{errorMessage}</div>
+        <div className="diag-error">❌ {errorMessage}</div>
       )}
     </div>
   );

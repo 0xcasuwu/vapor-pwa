@@ -1886,6 +1886,108 @@ body {
   border-radius: var(--radius-sm);
   color: var(--color-error);
   font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.ice-diagnostics .diag-warning {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 170, 0, 0.1);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.ice-diagnostics .diag-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+}
+
+.ice-diagnostics .diag-candidate {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6rem;
+  color: var(--color-text);
+}
+
+.ice-diagnostics .diag-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ice-diagnostics .diag-dot.local {
+  background: var(--color-text-muted);
+}
+
+.ice-diagnostics .diag-dot.stun {
+  background: var(--neon-cyan);
+  box-shadow: 0 0 4px var(--neon-cyan);
+}
+
+.ice-diagnostics .diag-dot.turn {
+  background: var(--neon-pink);
+  box-shadow: 0 0 4px var(--neon-pink);
+}
+
+.ice-diagnostics .diag-dot.prflx {
+  background: var(--neon-purple);
+  box-shadow: 0 0 4px var(--neon-purple);
+}
+
+.ice-diagnostics .diag-success-row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Flow Error Panel */
+.flow-error-panel {
+  width: 100%;
+  margin-top: 24px;
+  padding: 24px;
+  background: rgba(255, 51, 102, 0.05);
+  border: 1px solid rgba(255, 51, 102, 0.3);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.flow-error-panel .error-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: var(--color-error);
+}
+
+.flow-error-panel .error-header h3 {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.flow-error-panel .error-detail {
+  color: var(--color-text);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.flow-error-panel .ice-diagnostics {
+  margin-top: 16px;
+  margin-bottom: 24px;
+}
+
+.flow-error-panel .btn-primary {
+  margin-top: 8px;
 }
 
 /* ============================================
