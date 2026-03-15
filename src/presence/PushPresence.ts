@@ -52,7 +52,7 @@ export async function subscribeToPush(): Promise<PushSubscriptionData | null> {
   try {
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(applicationServerKey),
+      applicationServerKey: urlBase64ToUint8Array(applicationServerKey).buffer as ArrayBuffer,
     });
 
     // Extract the subscription data
@@ -132,8 +132,9 @@ export async function sendPresenceToContact(
     // In production, you'd need to implement the full Web Push protocol
     // or use a relay service
 
-    // Get VAPID keys for signing
-    const vapidKeys = await getOrCreateVapidKeys();
+    // Get VAPID keys for signing (will be used for JWT signing in production)
+    const _vapidKeys = await getOrCreateVapidKeys();
+    void _vapidKeys; // Mark as intentionally unused for now
 
     // Create the encrypted payload using the contact's push subscription keys
     const payload = JSON.stringify(message);
@@ -153,7 +154,7 @@ export async function sendPresenceToContact(
         'Content-Encoding': 'aes128gcm',
         'TTL': '60', // Message expires in 60 seconds
       },
-      body: encrypted,
+      body: encrypted.buffer as ArrayBuffer,
     });
 
     return response.ok;
@@ -215,7 +216,7 @@ async function encryptPushPayload(
   // Import client's public key
   const clientKey = await crypto.subtle.importKey(
     'raw',
-    clientPublicKey,
+    clientPublicKey.buffer as ArrayBuffer,
     { name: 'ECDH', namedCurve: 'P-256' },
     false,
     []
@@ -244,19 +245,11 @@ async function encryptPushPayload(
   const salt = crypto.getRandomValues(new Uint8Array(16));
 
   // Derive IKM from auth secret
-  const authSecretKey = await crypto.subtle.importKey(
-    'raw',
-    clientAuth,
-    'HKDF',
-    false,
-    ['deriveBits']
-  );
-
   const ikm = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: clientAuth,
+      salt: clientAuth.buffer as ArrayBuffer,
       info: new TextEncoder().encode('Content-Encoding: auth\0'),
     },
     sharedSecretKey,
@@ -277,7 +270,7 @@ async function encryptPushPayload(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: salt,
+      salt: salt.buffer as ArrayBuffer,
       info: cekInfo,
     },
     cekKey,
@@ -290,7 +283,7 @@ async function encryptPushPayload(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: salt,
+      salt: salt.buffer as ArrayBuffer,
       info: nonceInfo,
     },
     cekKey,

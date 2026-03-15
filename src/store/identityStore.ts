@@ -20,7 +20,7 @@ import {
   getIdentityFingerprint,
   type IdentityKeys,
 } from '../crypto/SeedIdentity';
-import { encrypt, decrypt } from '../crypto/Encryption';
+import { encrypt } from '../crypto/Encryption';
 import {
   exportContacts as exportContactsToBlob,
   importContacts as importContactsFromFile,
@@ -158,7 +158,7 @@ async function deriveStorageKey(mnemonic: string): Promise<Uint8Array> {
 }
 
 async function hashPublicKey(publicKey: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', publicKey);
+  const hash = await crypto.subtle.digest('SHA-256', publicKey.buffer as ArrayBuffer);
   return Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')

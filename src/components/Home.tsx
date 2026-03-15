@@ -180,13 +180,13 @@ function ContactItem({ contact }: { contact: Contact }) {
 }
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
-  const { fingerprint, mnemonic, revealMnemonic, wipeAll, contacts, exportContacts, importContacts } = useIdentityStore();
+  const { fingerprint, revealMnemonic, wipeAll, contacts, exportContacts, importContacts } = useIdentityStore();
   const [showSeed, setShowSeed] = useState(false);
   const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const fileInputRef = useState<HTMLInputElement | null>(null);
+  // File input is created dynamically in handleImportClick, no ref needed
 
   const handleRevealSeed = () => {
     const seed = revealMnemonic();

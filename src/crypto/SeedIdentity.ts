@@ -164,7 +164,7 @@ export async function deriveIdentityFromMnemonic(mnemonic: string): Promise<Iden
  * Returns first 8 characters of hex-encoded public key hash
  */
 export async function getIdentityFingerprint(publicKey: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', publicKey);
+  const hash = await crypto.subtle.digest('SHA-256', publicKey.buffer as ArrayBuffer);
   const hashArray = new Uint8Array(hash);
   return Array.from(hashArray.slice(0, 4))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -192,7 +192,7 @@ function bytesToBits(bytes: Uint8Array): string {
 }
 
 async function computeChecksum(entropy: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', entropy);
+  const hash = await crypto.subtle.digest('SHA-256', entropy.buffer as ArrayBuffer);
   const hashBits = bytesToBits(new Uint8Array(hash));
   // For 128-bit entropy, checksum is 4 bits
   return hashBits.slice(0, 4);

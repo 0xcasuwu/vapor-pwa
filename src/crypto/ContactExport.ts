@@ -108,7 +108,7 @@ export async function exportContacts(
   const encrypted = await encrypt(jsonString, storageKey);
 
   // Create downloadable blob
-  return new Blob([encrypted], { type: 'application/octet-stream' });
+  return new Blob([encrypted.buffer as ArrayBuffer], { type: 'application/octet-stream' });
 }
 
 /**
