@@ -13,9 +13,11 @@ import type { Contact } from '../store/identityStore';
 interface HomeProps {
   onGenerateQR: () => void;
   onScanQR: () => void;
+  onCreateGroup?: () => void;
+  onJoinGroup?: () => void;
 }
 
-export function Home({ onGenerateQR, onScanQR }: HomeProps) {
+export function Home({ onGenerateQR, onScanQR, onCreateGroup, onJoinGroup }: HomeProps) {
   const [showSettings, setShowSettings] = useState(false);
   const { fingerprint, contacts } = useIdentityStore();
 
@@ -78,6 +80,24 @@ export function Home({ onGenerateQR, onScanQR }: HomeProps) {
             <ScanIcon />
             <span>CONNECT</span>
           </button>
+        </div>
+
+        {/* Group Chat Section */}
+        <div className="group-section">
+          <div className="group-header">
+            <span className="group-kanji">集団</span>
+            <span className="group-label">GROUP CHAT</span>
+          </div>
+          <div className="group-buttons">
+            <button className="btn-group btn-neon" onClick={onCreateGroup}>
+              <GroupHostIcon />
+              <span>HOST</span>
+            </button>
+            <button className="btn-group btn-neon" onClick={onJoinGroup}>
+              <GroupJoinIcon />
+              <span>JOIN</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -556,6 +576,47 @@ function ScanIcon() {
       <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
       <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
       <line x1="7" y1="12" x2="17" y2="12" />
+    </svg>
+  );
+}
+
+function GroupHostIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Shield for host */}
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      {/* Star in center */}
+      <path d="M12 8v8M8 12h8" />
+    </svg>
+  );
+}
+
+function GroupJoinIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Multiple people */}
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }

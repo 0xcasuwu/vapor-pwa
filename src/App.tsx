@@ -12,13 +12,16 @@
 import { useState, useEffect } from 'react';
 import { Home } from './components/Home';
 import { Onboarding } from './components/Onboarding';
+import { CreateGroup } from './components/CreateGroup';
+import { JoinGroup } from './components/JoinGroup';
+import { GroupChat } from './components/GroupChat';
 import { useSessionStore } from './store/sessionStore';
 import { useIdentityStore } from './store/identityStore';
 import { parseInviteFromUrl, clearInviteFromUrl } from './utils/share';
 import { initPresence, broadcastPresence } from './presence/PushPresence';
 import './App.css';
 
-type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining';
+type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining' | 'create-group' | 'join-group' | 'group-chat';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -116,6 +119,26 @@ function App() {
     setScreen('scan');
   };
 
+  const handleCreateGroup = () => {
+    setScreen('create-group');
+  };
+
+  const handleJoinGroup = () => {
+    setScreen('join-group');
+  };
+
+  const handleGroupCreated = () => {
+    setScreen('group-chat');
+  };
+
+  const handleGroupJoined = () => {
+    setScreen('group-chat');
+  };
+
+  const handleLeaveGroup = () => {
+    setScreen('home');
+  };
+
   const handleCancel = () => {
     setScreen('home');
     setPendingInvite(null);
@@ -168,7 +191,12 @@ function App() {
   return (
     <div className="app">
       {screen === 'home' && (
-        <Home onGenerateQR={handleGenerateQR} onScanQR={handleScanQR} />
+        <Home
+          onGenerateQR={handleGenerateQR}
+          onScanQR={handleScanQR}
+          onCreateGroup={handleCreateGroup}
+          onJoinGroup={handleJoinGroup}
+        />
       )}
 
       {screen === 'generate' && (
@@ -189,6 +217,18 @@ function App() {
           onCancel={handleCancel}
           onComplete={handleJoinComplete}
         />
+      )}
+
+      {screen === 'create-group' && (
+        <CreateGroup onBack={handleCancel} onGroupCreated={handleGroupCreated} />
+      )}
+
+      {screen === 'join-group' && (
+        <JoinGroup onBack={handleCancel} onJoined={handleGroupJoined} />
+      )}
+
+      {screen === 'group-chat' && (
+        <GroupChat onLeave={handleLeaveGroup} />
       )}
 
       {/* Error Toast */}
