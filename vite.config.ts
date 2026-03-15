@@ -9,6 +9,7 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     include: ['src/**/*.test.ts'],
+    setupFiles: ['./src/test-setup.ts'],
   },
   // GitHub Pages deployment - repo name becomes base path
   base: process.env.NODE_ENV === 'production' ? '/vapor-pwa/' : '/',
@@ -53,6 +54,8 @@ export default defineConfig({
         clientsClaim: true,
         // Clean up old caches on activation
         cleanupOutdatedCaches: true,
+        // Import push handler into service worker
+        importScripts: ['sw-push.js'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

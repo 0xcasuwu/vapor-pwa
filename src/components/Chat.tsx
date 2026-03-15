@@ -5,10 +5,12 @@
  * Displays messages and provides input for sending new messages.
  * All messages are encrypted with ChaCha20-Poly1305 before sending.
  * Includes safety number display for MITM verification.
+ * Allows saving peer as contact with nickname.
  */
 
 import { useState, useRef, useEffect } from 'react';
 import { useSessionStore } from '../store/sessionStore';
+import { useIdentityStore } from '../store/identityStore';
 import type { Message } from '../store/sessionStore';
 
 interface ChatProps {
@@ -18,6 +20,9 @@ interface ChatProps {
 export function Chat({ onEndSession }: ChatProps) {
   const [input, setInput] = useState('');
   const [showSafetyNumber, setShowSafetyNumber] = useState(false);
+  const [showSaveContact, setShowSaveContact] = useState(false);
+  const [contactNickname, setContactNickname] = useState('');
+  const [contactSaved, setContactSaved] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -29,7 +34,21 @@ export function Chat({ onEndSession }: ChatProps) {
     safetyNumber,
     safetyNumberVerified,
     verifySafetyNumber,
+    _peerPublicKeys,
   } = useSessionStore();
+
+  const { addContact, getContactByPublicKey } = useIdentityStore();
+
+  // Check if peer is already a contact
+  useEffect(() => {
+    if (_peerPublicKeys) {
+      const existing = getContactByPublicKey(_peerPublicKeys);
+      if (existing) {
+        setContactSaved(true);
+        setContactNickname(existing.nickname);
+      }
+    }
+  }, [_peerPublicKeys, getContactByPublicKey]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -58,6 +77,18 @@ export function Chat({ onEndSession }: ChatProps) {
     onEndSession();
   };
 
+  const handleSaveContact = async () => {
+    if (!_peerPublicKeys || !contactNickname.trim()) return;
+
+    try {
+      await addContact(_peerPublicKeys, contactNickname.trim());
+      setContactSaved(true);
+      setShowSaveContact(false);
+    } catch (err) {
+      console.error('Failed to save contact:', err);
+    }
+  };
+
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString([], {
       hour: '2-digit',
@@ -78,6 +109,16 @@ export function Chat({ onEndSession }: ChatProps) {
         </div>
 
         <div className="header-actions">
+          {_peerPublicKeys && !contactSaved && (
+            <button
+              className="btn-save-contact"
+              onClick={() => setShowSaveContact(true)}
+              title="Save contact"
+            >
+              <UserPlusIcon />
+            </button>
+          )}
+
           {safetyNumber && (
             <button
               className={`btn-verify ${safetyNumberVerified ? 'verified' : ''}`}
@@ -143,6 +184,64 @@ export function Chat({ onEndSession }: ChatProps) {
                 onClick={() => setShowSafetyNumber(false)}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Contact Modal */}
+      {showSaveContact && (
+        <div className="safety-modal-overlay" onClick={() => setShowSaveContact(false)}>
+          <div className="safety-modal save-contact-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="safety-header">
+              <UserPlusIcon />
+              <h3>Save Contact</h3>
+            </div>
+
+            <p className="safety-description">
+              Give this contact a nickname so you can recognize them later.
+            </p>
+
+            <input
+              type="text"
+              className="contact-nickname-input"
+              placeholder="Nickname..."
+              value={contactNickname}
+              onChange={(e) => setContactNickname(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveContact();
+              }}
+              autoFocus
+            />
+
+            {_peerPublicKeys && (
+              <div className="contact-key-preview">
+                <span className="key-label">Key:</span>
+                <span className="key-value">
+                  {Array.from(_peerPublicKeys.slice(0, 8))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('')
+                    .toUpperCase()}...
+                </span>
+              </div>
+            )}
+
+            <div className="safety-actions">
+              <button
+                className="btn-primary"
+                onClick={handleSaveContact}
+                disabled={!contactNickname.trim()}
+              >
+                <CheckIcon />
+                Save Contact
+              </button>
+
+              <button
+                className="btn-text"
+                onClick={() => setShowSaveContact(false)}
+              >
+                Cancel
               </button>
             </div>
           </div>
@@ -267,6 +366,26 @@ function CheckIcon() {
       strokeLinejoin="round"
     >
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function UserPlusIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
     </svg>
   );
 }

@@ -2,20 +2,20 @@
  * App.tsx
  * Vapor PWA - Main Application Component
  *
- * Manages the main application flow with two-way QR handshake:
- *
  * Flow:
- * 1. Alice: generate -> waiting (shows initial QR)
- * 2. Bob: scan -> showing_offer (scans Alice's QR, shows offer QR)
- * 3. Alice: scan -> showing_answer (scans Bob's offer, shows answer QR)
- * 4. Bob: scan -> connecting -> active (scans Alice's answer)
- * 5. Both: chat
+ * 1. Identity check: onboarding if no identity, otherwise home
+ * 2. Home shows contacts list and connect options
+ * 3. Connection flows: initiate (QR) or connect (scan)
+ * 4. Chat session with peer
  */
 
 import { useState, useEffect } from 'react';
 import { Home } from './components/Home';
+import { Onboarding } from './components/Onboarding';
 import { useSessionStore } from './store/sessionStore';
+import { useIdentityStore } from './store/identityStore';
 import { parseInviteFromUrl, clearInviteFromUrl } from './utils/share';
+import { initPresence, broadcastPresence } from './presence/PushPresence';
 import './App.css';
 
 type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining';
@@ -26,6 +26,53 @@ function App() {
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   const { state: sessionState } = useSessionStore();
+  const { state: identityState, initialize: initIdentity } = useIdentityStore();
+
+  const { contacts, fingerprint } = useIdentityStore();
+
+  // Initialize identity store on mount
+  useEffect(() => {
+    initIdentity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Initialize presence and broadcast online status
+  useEffect(() => {
+    if (identityState !== 'unlocked' || !fingerprint) return;
+
+    // Initialize push subscription
+    initPresence().then(subscription => {
+      if (subscription) {
+        console.log('[Presence] Push subscription ready');
+      }
+    });
+
+    // Broadcast online when app loads
+    broadcastPresence(contacts, 'online', fingerprint);
+
+    // Broadcast offline when app closes
+    const handleBeforeUnload = () => {
+      // Using navigator.sendBeacon would be more reliable here
+      // but for now we'll rely on the service worker
+      broadcastPresence(contacts, 'offline', fingerprint);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        broadcastPresence(contacts, 'away', fingerprint);
+      } else if (document.visibilityState === 'visible') {
+        broadcastPresence(contacts, 'online', fingerprint);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [identityState, fingerprint, contacts]);
 
   // Watch session state changes to update screen
   // Only handle terminal states (active, error) - flow components handle intermediate states
@@ -96,6 +143,27 @@ function App() {
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  // Show loading while identity state is being determined
+  if (identityState === 'loading') {
+    return (
+      <div className="app">
+        <div className="loading-screen">
+          <div className="spinner" />
+          <p>Initializing...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show onboarding if no identity exists
+  if (identityState === 'none') {
+    return (
+      <div className="app">
+        <Onboarding />
+      </div>
+    );
+  }
 
   return (
     <div className="app">

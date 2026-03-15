@@ -2,8 +2,13 @@
  * Home.tsx
  * Vapor PWA - Home Screen
  *
- * Cyberpunk Japanese aesthetic with ethereal vapor and neon glow
+ * Shows identity fingerprint, contacts list, and connection options.
+ * Cyberpunk Japanese aesthetic with ethereal vapor and neon glow.
  */
+
+import { useState } from 'react';
+import { useIdentityStore } from '../store/identityStore';
+import type { Contact } from '../store/identityStore';
 
 interface HomeProps {
   onGenerateQR: () => void;
@@ -11,6 +16,9 @@ interface HomeProps {
 }
 
 export function Home({ onGenerateQR, onScanQR }: HomeProps) {
+  const [showSettings, setShowSettings] = useState(false);
+  const { fingerprint, contacts } = useIdentityStore();
+
   return (
     <div className="home">
       {/* Animated background elements */}
@@ -19,6 +27,18 @@ export function Home({ onGenerateQR, onScanQR }: HomeProps) {
       <div className="bg-glow bg-glow-2" />
 
       <div className="home-header">
+        <div className="header-top">
+          <div className="identity-badge" onClick={() => setShowSettings(true)}>
+            <span className="identity-icon">
+              <IdentityIcon />
+            </span>
+            <span className="identity-fingerprint">{fingerprint || '--------'}</span>
+          </div>
+          <button className="btn-settings" onClick={() => setShowSettings(true)}>
+            <SettingsIcon />
+          </button>
+        </div>
+
         <div className="logo">
           <VaporLogo />
         </div>
@@ -33,15 +53,20 @@ export function Home({ onGenerateQR, onScanQR }: HomeProps) {
       </div>
 
       <div className="home-content">
-        <div className="security-badge">
-          <span className="badge-glow" />
-          <span className="badge-text">POST-QUANTUM SECURE</span>
-        </div>
-
-        <p className="description">
-          Ephemeral encrypted messaging.<br />
-          No servers. No trace. No history.
-        </p>
+        {contacts.length > 0 ? (
+          <ContactsList contacts={contacts} />
+        ) : (
+          <>
+            <div className="security-badge">
+              <span className="badge-glow" />
+              <span className="badge-text">POST-QUANTUM SECURE</span>
+            </div>
+            <p className="description">
+              Ephemeral encrypted messaging.<br />
+              No servers. No trace. No history.
+            </p>
+          </>
+        )}
 
         <div className="action-buttons">
           <button className="btn-primary btn-neon" onClick={onGenerateQR}>
@@ -84,7 +109,269 @@ export function Home({ onGenerateQR, onScanQR }: HomeProps) {
           <span className="footer-en">Zero Trace Protocol</span>
         </p>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
     </div>
+  );
+}
+
+function ContactsList({ contacts }: { contacts: Contact[] }) {
+  // Sort by last seen, then by added date
+  const sortedContacts = [...contacts].sort((a, b) => {
+    if (a.lastSeen && b.lastSeen) return b.lastSeen - a.lastSeen;
+    if (a.lastSeen) return -1;
+    if (b.lastSeen) return 1;
+    return b.addedAt - a.addedAt;
+  });
+
+  return (
+    <div className="contacts-section">
+      <div className="contacts-header">
+        <span className="contacts-kanji">連絡先</span>
+        <span className="contacts-label">CONTACTS</span>
+        <span className="contacts-count">{contacts.length}</span>
+      </div>
+      <div className="contacts-list">
+        {sortedContacts.map(contact => (
+          <ContactItem key={contact.id} contact={contact} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContactItem({ contact }: { contact: Contact }) {
+  const publicKeyHex = Array.from(contact.publicKey.slice(0, 4))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+
+  const formatTime = (timestamp?: number) => {
+    if (!timestamp) return null;
+    const diff = Date.now() - timestamp;
+    if (diff < 60000) return 'now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
+    return `${Math.floor(diff / 86400000)}d`;
+  };
+
+  return (
+    <div className="contact-item">
+      <div className="contact-avatar">
+        {contact.isOnline && <span className="online-dot" />}
+        <span>{contact.nickname.charAt(0).toUpperCase()}</span>
+      </div>
+      <div className="contact-info">
+        <span className="contact-name">{contact.nickname}</span>
+        <span className="contact-key">{publicKeyHex}</span>
+      </div>
+      <div className="contact-status">
+        {contact.isOnline ? (
+          <span className="status-online">online</span>
+        ) : contact.lastSeen ? (
+          <span className="contact-time">{formatTime(contact.lastSeen)}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SettingsModal({ onClose }: { onClose: () => void }) {
+  const { fingerprint, mnemonic, revealMnemonic, wipeAll, contacts, exportContacts, importContacts } = useIdentityStore();
+  const [showSeed, setShowSeed] = useState(false);
+  const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const fileInputRef = useState<HTMLInputElement | null>(null);
+
+  const handleRevealSeed = () => {
+    const seed = revealMnemonic();
+    if (seed) {
+      setRevealedSeed(seed);
+      setShowSeed(true);
+    }
+  };
+
+  const handleWipe = async () => {
+    if (confirmWipe) {
+      await wipeAll();
+      onClose();
+    } else {
+      setConfirmWipe(true);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setExportStatus('Exporting...');
+      await exportContacts();
+      setExportStatus('Contacts exported!');
+      setTimeout(() => setExportStatus(null), 3000);
+    } catch (err) {
+      setExportStatus(err instanceof Error ? err.message : 'Export failed');
+    }
+  };
+
+  const handleImportClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.vapor';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        setImportStatus('Importing...');
+        const result = await importContacts(file);
+        setImportStatus(`Imported ${result.imported} contacts${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}`);
+        setTimeout(() => setImportStatus(null), 3000);
+      } catch (err) {
+        setImportStatus(err instanceof Error ? err.message : 'Import failed');
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="settings-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Settings</h2>
+          <button className="btn-close" onClick={onClose}>x</button>
+        </div>
+
+        <div className="settings-content">
+          <div className="settings-section">
+            <div className="settings-label">Identity</div>
+            <div className="settings-value fingerprint">{fingerprint}</div>
+          </div>
+
+          {/* Browser Warning */}
+          <div className="browser-warning">
+            <WarningIcon />
+            <span>Contacts are stored locally in this browser. Export to use on other devices.</span>
+          </div>
+
+          {/* Export/Import Section */}
+          <div className="settings-section">
+            <div className="settings-label">Contacts ({contacts.length})</div>
+            <div className="export-import-buttons">
+              <button
+                className="btn-settings-action"
+                onClick={handleExport}
+                disabled={contacts.length === 0}
+              >
+                <ExportIcon />
+                <span>Export Contacts</span>
+              </button>
+              <button className="btn-settings-action" onClick={handleImportClick}>
+                <ImportIcon />
+                <span>Import Contacts</span>
+              </button>
+            </div>
+            {exportStatus && <div className="status-message">{exportStatus}</div>}
+            {importStatus && <div className="status-message">{importStatus}</div>}
+          </div>
+
+          {!showSeed && !revealedSeed && (
+            <button className="btn-settings-action" onClick={handleRevealSeed}>
+              <span>Reveal Recovery Phrase</span>
+              <WarningBadge />
+            </button>
+          )}
+
+          {showSeed && revealedSeed && (
+            <div className="seed-reveal">
+              <div className="seed-warning-small">
+                <WarningIcon />
+                <span>Write this down securely!</span>
+              </div>
+              <div className="seed-words-grid">
+                {revealedSeed.split(' ').map((word, i) => (
+                  <div key={i} className="seed-word-small">
+                    <span className="word-num">{i + 1}</span>
+                    <span>{word}</span>
+                  </div>
+                ))}
+              </div>
+              <button className="btn-hide-seed" onClick={() => setShowSeed(false)}>
+                Hide Phrase
+              </button>
+            </div>
+          )}
+
+          <div className="settings-danger">
+            <button
+              className={`btn-danger ${confirmWipe ? 'confirming' : ''}`}
+              onClick={handleWipe}
+            >
+              {confirmWipe ? 'Confirm Wipe All Data' : 'Wipe Identity & Data'}
+            </button>
+            {confirmWipe && (
+              <p className="danger-warning">
+                This will delete your identity and all contacts. This cannot be undone.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function ImportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function WarningBadge() {
+  return <span className="warning-badge">!</span>;
+}
+
+function WarningIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function IdentityIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
   );
 }
 
