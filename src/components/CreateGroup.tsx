@@ -44,7 +44,8 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
   const [isCreating, setIsCreating] = useState(false);
 
   const { createGroup, activeGroup, addMember, setMemberChannel } = useGroupStore();
-  const { identity, fingerprint } = useIdentityStore();
+  // Keep hook call for reactivity, but read identity/fingerprint from getState() to avoid stale closures
+  useIdentityStore();
 
   const pendingMembersRef = useRef<Map<string, PendingMember>>(new Map());
   const hostChannelRef = useRef<WebRTCChannel | null>(null);
@@ -65,6 +66,7 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
   };
 
   const handleCreateGroup = async () => {
+    const { identity, fingerprint } = useIdentityStore.getState();
     if (!groupName.trim() || !identity || !fingerprint) return;
 
     setIsCreating(true);
@@ -234,6 +236,7 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
 
   const handleAddAnotherMember = async () => {
     // Create a new WebRTC channel for the next member
+    const { identity } = useIdentityStore.getState();
     if (!identity || !activeGroup) return;
 
     try {

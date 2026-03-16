@@ -14,8 +14,12 @@ import { formatMnemonicForDisplay } from '../crypto/SeedIdentity';
 
 type OnboardingStep = 'welcome' | 'creating' | 'show_seed' | 'confirm_backup' | 'import' | 'importing';
 
-export function Onboarding() {
-  const [step, setStep] = useState<OnboardingStep>('welcome');
+interface OnboardingProps {
+  unlockMode?: boolean;
+}
+
+export function Onboarding({ unlockMode }: OnboardingProps = {}) {
+  const [step, setStep] = useState<OnboardingStep>(unlockMode ? 'import' : 'welcome');
   const [importValue, setImportValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);

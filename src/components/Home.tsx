@@ -213,6 +213,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     if (seed) {
       setRevealedSeed(seed);
       setShowSeed(true);
+    } else {
+      setRevealedSeed(null);
+      setShowSeed(false);
     }
   };
 

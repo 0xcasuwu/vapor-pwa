@@ -37,7 +37,8 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { identity, fingerprint } = useIdentityStore();
+  // Keep hook call for reactivity, but read identity/fingerprint from getState() to avoid stale closures
+  useIdentityStore();
   const { joinGroup, setConnectionState } = useGroupStore();
 
   const channelRef = useRef<WebRTCChannel | null>(null);
@@ -92,6 +93,8 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
   }, [pasteValue]);
 
   const processInviteAndGenerateResponse = async (inviteData: GroupInvitePayload) => {
+    // Read directly from store to avoid stale closure
+    const { identity, fingerprint } = useIdentityStore.getState();
     if (!identity || !fingerprint) {
       setError('Identity not ready. Please try again.');
       return;
@@ -167,6 +170,7 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
   };
 
   const sendJoinRequest = (channel: WebRTCChannel) => {
+    const { identity, fingerprint } = useIdentityStore.getState();
     if (!identity || !fingerprint) return;
 
     const publicKeyBase64 = btoa(String.fromCharCode(...identity.publicKey));

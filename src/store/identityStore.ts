@@ -31,18 +31,22 @@ import {
 // IndexedDB Schema
 interface VaporDB extends DBSchema {
   identity: {
-    key: 'current';
+    key: string;
     value: {
       publicKey: Uint8Array;
       encryptedPrivateKey: Uint8Array;
       fingerprint: string;
       createdAt: number;
-    };
+    } | Uint8Array; // 'current' → identity record, 'encryptedMnemonic' → encrypted bytes
   };
   contacts: {
     key: string; // contact id (hash of public key)
     value: Contact;
     indexes: { 'by-nickname': string; 'by-added': number };
+  };
+  devicekeys: {
+    key: string;
+    value: CryptoKey;
   };
 }
 
@@ -103,7 +107,7 @@ interface IdentityStore {
 }
 
 const DB_NAME = 'vapor-identity';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let db: IDBPDatabase<VaporDB> | null = null;
 let storageKey: Uint8Array | null = null;
@@ -124,10 +128,69 @@ async function getDB(): Promise<IDBPDatabase<VaporDB>> {
         contactsStore.createIndex('by-nickname', 'nickname');
         contactsStore.createIndex('by-added', 'addedAt');
       }
+
+      // Device key store (for encrypting mnemonic at rest)
+      if (!database.objectStoreNames.contains('devicekeys')) {
+        database.createObjectStore('devicekeys');
+      }
     },
   });
 
   return db;
+}
+
+/**
+ * Get or create a non-extractable AES-GCM key bound to this device/browser.
+ * Used to encrypt the mnemonic in IndexedDB so it survives page reloads
+ * while staying encrypted at rest.
+ */
+async function getDeviceKey(): Promise<CryptoKey> {
+  const database = await getDB();
+  const existing = await database.get('devicekeys', 'current');
+  if (existing) return existing as CryptoKey;
+
+  const key = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    false, // non-extractable
+    ['encrypt', 'decrypt']
+  );
+
+  await database.put('devicekeys', key, 'current');
+  return key;
+}
+
+/**
+ * Encrypt mnemonic with device key for IndexedDB storage
+ */
+async function encryptMnemonicForStorage(mnemonic: string): Promise<Uint8Array> {
+  const deviceKey = await getDeviceKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(mnemonic);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    deviceKey,
+    encoded
+  );
+  // Combine iv + ciphertext
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  return combined;
+}
+
+/**
+ * Decrypt mnemonic from IndexedDB storage using device key
+ */
+async function decryptMnemonicFromStorage(combined: Uint8Array): Promise<string> {
+  const deviceKey = await getDeviceKey();
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    deviceKey,
+    ciphertext
+  );
+  return new TextDecoder().decode(plaintext);
 }
 
 async function deriveStorageKey(mnemonic: string): Promise<Uint8Array> {
@@ -174,24 +237,47 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
   mnemonic: null,
 
   /**
-   * Initialize the store - check if identity exists
+   * Initialize the store - check if identity exists and auto-unlock
    */
   initialize: async () => {
     try {
       const database = await getDB();
       const stored = await database.get('identity', 'current');
 
-      if (stored) {
-        // Identity exists but is locked (we don't have the key yet)
-        // For now, we auto-unlock since key is in memory from import
-        // TODO: Add proper lock/unlock with password
-        set({
-          state: 'locked',
-          fingerprint: stored.fingerprint,
-        });
-      } else {
+      if (!stored) {
         set({ state: 'none' });
+        return;
       }
+
+      // Try to auto-unlock by recovering the mnemonic from device-encrypted storage
+      const encryptedMnemonic = await database.get('identity', 'encryptedMnemonic');
+      if (encryptedMnemonic) {
+        try {
+          const mnemonic = await decryptMnemonicFromStorage(encryptedMnemonic as Uint8Array);
+          const keys = await deriveIdentityFromMnemonic(mnemonic);
+          storageKey = await deriveStorageKey(mnemonic);
+          const contacts = await database.getAll('contacts');
+
+          set({
+            state: 'unlocked',
+            identity: keys,
+            fingerprint: stored.fingerprint,
+            mnemonic,
+            contacts,
+            error: null,
+          });
+          return;
+        } catch {
+          // Device key changed or data corrupted — fall through to locked
+          console.warn('[Identity] Failed to auto-unlock, falling back to locked state');
+        }
+      }
+
+      // No encrypted mnemonic or decryption failed — locked state
+      set({
+        state: 'locked',
+        fingerprint: stored.fingerprint,
+      });
     } catch (error) {
       set({
         state: 'none',
@@ -226,6 +312,10 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         fingerprint,
         createdAt: Date.now(),
       }, 'current');
+
+      // Persist mnemonic encrypted with device key for auto-unlock on reload
+      const encMnemonic = await encryptMnemonicForStorage(mnemonic);
+      await database.put('identity', encMnemonic, 'encryptedMnemonic');
 
       set({
         state: 'unlocked',
@@ -284,6 +374,10 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         fingerprint,
         createdAt: existing?.createdAt || Date.now(),
       }, 'current');
+
+      // Persist mnemonic encrypted with device key for auto-unlock on reload
+      const encMnemonic = await encryptMnemonicForStorage(mnemonic);
+      await database.put('identity', encMnemonic, 'encryptedMnemonic');
 
       // Load contacts
       const contacts = await database.getAll('contacts');
@@ -536,9 +630,10 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
   wipeAll: async () => {
     const database = await getDB();
 
-    const tx = database.transaction(['identity', 'contacts'], 'readwrite');
+    const tx = database.transaction(['identity', 'contacts', 'devicekeys'], 'readwrite');
     await tx.objectStore('identity').clear();
     await tx.objectStore('contacts').clear();
+    await tx.objectStore('devicekeys').clear();
     await tx.done;
 
     storageKey?.fill(0);

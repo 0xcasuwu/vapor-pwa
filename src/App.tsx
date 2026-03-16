@@ -188,6 +188,16 @@ function App() {
     );
   }
 
+  // Identity exists but couldn't auto-unlock (e.g. first run after update)
+  // Ask user to re-enter their seed phrase to unlock
+  if (identityState === 'locked') {
+    return (
+      <div className="app">
+        <Onboarding unlockMode />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {screen === 'home' && (
