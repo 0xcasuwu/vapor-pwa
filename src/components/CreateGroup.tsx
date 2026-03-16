@@ -95,11 +95,12 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
             console.error('[Group] Failed to parse message:', e);
           }
         },
-        onStateChange: (state: ConnectionState) => {
-          console.log('[Group] Host channel state:', state);
-          if (state === 'connected') {
-            // Member connected successfully
+        onStateChange: (connState: ConnectionState) => {
+          console.log('[Group] Host channel state:', connState);
+          if (connState === 'connected') {
             console.log('[Group] Member connected!');
+          } else if (connState === 'failed') {
+            setError('Connection to member failed. Ask them to rejoin with a new invite.');
           }
         },
         onSignalingData: () => {

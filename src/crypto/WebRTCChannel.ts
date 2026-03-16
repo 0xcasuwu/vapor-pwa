@@ -68,35 +68,26 @@ export class WebRTCChannel {
     // Google STUN servers (free)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    // Metered.ca free TURN servers (more reliable than openrelay)
-    // These have a free tier with 500MB/month
+    // Open Relay TURN servers (free, community-run)
     {
-      urls: 'turn:a.relay.metered.ca:80',
-      username: 'e8dd65f92ae17cee56551e70',
-      credential: 'axn/IrJvMdXF2gWO',
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
     },
     {
-      urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-      username: 'e8dd65f92ae17cee56551e70',
-      credential: 'axn/IrJvMdXF2gWO',
+      urls: 'turn:openrelay.metered.ca:80?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
     },
     {
-      urls: 'turn:a.relay.metered.ca:443',
-      username: 'e8dd65f92ae17cee56551e70',
-      credential: 'axn/IrJvMdXF2gWO',
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
     },
     {
-      urls: 'turn:a.relay.metered.ca:443?transport=tcp',
-      username: 'e8dd65f92ae17cee56551e70',
-      credential: 'axn/IrJvMdXF2gWO',
-    },
-    {
-      urls: 'turns:a.relay.metered.ca:443',
-      username: 'e8dd65f92ae17cee56551e70',
-      credential: 'axn/IrJvMdXF2gWO',
+      urls: 'turns:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
     },
   ];
 

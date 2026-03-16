@@ -42,6 +42,8 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
   const { joinGroup, setConnectionState } = useGroupStore();
 
   const channelRef = useRef<WebRTCChannel | null>(null);
+  const stepRef = useRef<JoinStep>(step);
+  stepRef.current = step;
 
   // Cleanup on unmount
   useEffect(() => {
@@ -124,17 +126,17 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
           }
         },
         onStateChange: (newState: ConnectionState) => {
-          console.log('[JoinGroup] Channel state:', newState);
+          console.log('[JoinGroup] Channel state:', newState, 'current step:', stepRef.current);
 
           if (newState === 'connected') {
             console.log('[JoinGroup] Connected! Sending join request...');
             sendJoinRequest(channel);
-          } else if (newState === 'disconnected' || newState === 'failed') {
-            // Don't show error during initial setup
-            if (step === 'connecting') {
-              setError('Connection lost. Please try again.');
-              setStep('error');
-            }
+          } else if (newState === 'failed') {
+            setError('Connection failed. Both devices must be online with the same invite.');
+            setStep('error');
+          } else if (newState === 'disconnected' && stepRef.current === 'connecting') {
+            setError('Connection lost. Please try again.');
+            setStep('error');
           }
         },
         onSignalingData: () => {
@@ -252,7 +254,13 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
       setStep('connecting');
       setConnectionState('connecting');
 
-      // The onStateChange callback will handle transitioning to connected
+      // Timeout if connection doesn't establish within 30 seconds
+      setTimeout(() => {
+        if (stepRef.current === 'connecting') {
+          setError('Connection timed out. Both devices must be online. Try again with a fresh invite.');
+          setStep('error');
+        }
+      }, 30000);
 
     } catch (err) {
       console.error('[JoinGroup] Failed to process final code:', err);
