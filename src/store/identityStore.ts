@@ -118,6 +118,7 @@ const DB_VERSION = 2;
 
 let db: IDBPDatabase<VaporDB> | null = null;
 let storageKey: Uint8Array | null = null;
+let initPromise: Promise<void> | null = null;
 
 async function getDB(): Promise<IDBPDatabase<VaporDB>> {
   if (db) return db;
@@ -247,6 +248,9 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
    * Initialize the store - check if identity exists and auto-unlock
    */
   initialize: async () => {
+    // Deduplicate concurrent calls — return existing promise if in flight
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
     try {
       const database = await getDB();
       const stored = await database.get('identity', 'current');
@@ -290,7 +294,11 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         state: 'none',
         error: error instanceof Error ? error.message : 'Failed to initialize',
       });
+    } finally {
+      initPromise = null;
     }
+    })();
+    return initPromise;
   },
 
   /**

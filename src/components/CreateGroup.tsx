@@ -66,8 +66,13 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
   };
 
   const handleCreateGroup = async () => {
-    const { identity, fingerprint } = useIdentityStore.getState();
-    if (!groupName.trim() || !identity || !fingerprint) return;
+    if (!groupName.trim()) return;
+    let { identity, fingerprint } = useIdentityStore.getState();
+    if (!identity || !fingerprint) {
+      await useIdentityStore.getState().initialize();
+      ({ identity, fingerprint } = useIdentityStore.getState());
+    }
+    if (!identity || !fingerprint) return;
 
     setIsCreating(true);
     setError(null);

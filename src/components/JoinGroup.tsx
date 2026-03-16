@@ -94,9 +94,21 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
 
   const processInviteAndGenerateResponse = async (inviteData: GroupInvitePayload) => {
     // Read directly from store to avoid stale closure
-    const { identity, fingerprint } = useIdentityStore.getState();
+    let { identity, fingerprint, state: idState } = useIdentityStore.getState();
+
+    // If identity not loaded yet, try re-initializing and wait
     if (!identity || !fingerprint) {
-      setError('Identity not ready. Please try again.');
+      console.warn(`[JoinGroup] Identity not ready (state=${idState}), retrying initialize...`);
+      await useIdentityStore.getState().initialize();
+      const refreshed = useIdentityStore.getState();
+      identity = refreshed.identity;
+      fingerprint = refreshed.fingerprint;
+      idState = refreshed.state;
+    }
+
+    if (!identity || !fingerprint) {
+      console.error(`[JoinGroup] Identity still not ready after retry (state=${idState}, identity=${!!identity}, fingerprint=${fingerprint})`);
+      setError(`Identity not ready (state: ${idState}). Please go back and try again.`);
       return;
     }
 
