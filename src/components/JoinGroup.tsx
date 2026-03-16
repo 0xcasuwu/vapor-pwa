@@ -2,11 +2,10 @@
  * JoinGroup.tsx
  * Vapor PWA - Star Topology Group Chat Joining
  *
- * Member flow (similar to ResponderFlow):
+ * Member flow (2-step, matching P2P pattern):
  * 1. Paste host's invite code
- * 2. Generate and copy response code for host
- * 3. Paste host's final code
- * 4. Connection established, enter group chat
+ * 2. Copy response code for host, then wait for connection
+ * Connection establishes automatically when host processes the response.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -26,13 +25,12 @@ interface JoinGroupProps {
   onJoined: () => void;
 }
 
-type JoinStep = 'paste_invite' | 'showing_response' | 'paste_final' | 'connecting' | 'connected' | 'error';
+type JoinStep = 'paste_invite' | 'showing_response' | 'connecting' | 'connected' | 'error';
 
 export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
   const [step, setStep] = useState<JoinStep>('paste_invite');
   const [pasteValue, setPasteValue] = useState('');
   const [invite, setInvite] = useState<GroupInvitePayload | null>(null);
-  const [hostFingerprint, setHostFingerprint] = useState<string>('');
   const [responseCode, setResponseCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,9 +78,6 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
         return;
       }
 
-      // Get host fingerprint for display
-      const fp = await getHostFingerprint(decoded.hostPublicKey);
-      setHostFingerprint(fp);
       setInvite(decoded);
 
       // Process the invite and generate response
@@ -114,6 +109,9 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
       return;
     }
 
+    // Get host fingerprint for display
+    const fp = await getHostFingerprint(inviteData.hostPublicKey);
+
     try {
       // Create WebRTC channel
       const channel = new WebRTCChannel({
@@ -132,8 +130,11 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
             console.log('[JoinGroup] Connected! Sending join request...');
             sendJoinRequest(channel);
           } else if (newState === 'failed') {
-            setError('Connection failed. Both devices must be online with the same invite.');
-            setStep('error');
+            // Only show error if we haven't already connected
+            if (stepRef.current !== 'connected') {
+              setError('Connection failed. Make sure the host has processed your response code.');
+              setStep('error');
+            }
           } else if (newState === 'disconnected' && stepRef.current === 'connecting') {
             setError('Connection lost. Please try again.');
             setStep('error');
@@ -169,7 +170,7 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
         joinGroup({
           id: inviteData.groupId,
           name: inviteData.groupName,
-          hostFingerprint: hostFingerprint,
+          hostFingerprint: fp,
           hostNickname: inviteData.hostNickname,
           createdAt: inviteData.timestamp * 1000,
         });
@@ -226,47 +227,20 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
     }
   }, [responseCode]);
 
-  const handleNextStep = () => {
-    setStep('paste_final');
-    setPasteValue('');
-    setError(null);
-  };
+  // After copying response, go straight to connecting (no "paste final" step needed)
+  const handleWaitForConnection = () => {
+    setStep('connecting');
+    setConnectionState('connecting');
 
-  const handlePasteFinal = useCallback(async () => {
-    if (!pasteValue.trim()) {
-      setError('Please paste the final code');
-      return;
-    }
-
-    setError(null);
-
-    try {
-      // Parse the host's final confirmation
-      const finalData = JSON.parse(atob(pasteValue.trim()));
-
-      if (finalData.type !== 'group_final' || !finalData.confirmed) {
-        setError('Invalid final code. Please check and try again.');
-        return;
+    // Timeout if connection doesn't establish within 60 seconds
+    // (generous timeout to allow for manual copy-paste between devices)
+    setTimeout(() => {
+      if (stepRef.current === 'connecting') {
+        setError('Connection timed out. Make sure the host pastes your response code.');
+        setStep('error');
       }
-
-      // The WebRTC connection should already be establishing
-      // Mark as connecting and wait for the channel to connect
-      setStep('connecting');
-      setConnectionState('connecting');
-
-      // Timeout if connection doesn't establish within 30 seconds
-      setTimeout(() => {
-        if (stepRef.current === 'connecting') {
-          setError('Connection timed out. Both devices must be online. Try again with a fresh invite.');
-          setStep('error');
-        }
-      }, 30000);
-
-    } catch (err) {
-      console.error('[JoinGroup] Failed to process final code:', err);
-      setError('Invalid final code. Please check and try again.');
-    }
-  }, [pasteValue, setConnectionState]);
+    }, 60000);
+  };
 
   // Step 1: Paste invite code
   if (step === 'paste_invite') {
@@ -317,7 +291,7 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
     );
   }
 
-  // Step 2: Show response code
+  // Step 2: Show response code, then wait for connection
   if (step === 'showing_response' && invite) {
     return (
       <div className="join-group-container">
@@ -329,7 +303,7 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
             </div>
 
             <p className="step-description">
-              Send this response code back to the host
+              Copy this code and send it to the host. Once they process it, you'll connect automatically.
             </p>
 
             <div className="code-container">
@@ -357,63 +331,10 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
             </div>
 
             <div className="flow-actions">
-              <button className="btn-primary" onClick={handleNextStep} disabled={!responseCode}>
-                Next: Paste Host's Final Code
+              <button className="btn-primary" onClick={handleWaitForConnection} disabled={!responseCode}>
+                I've Sent The Code
               </button>
             </div>
-          </div>
-
-          <button className="btn-cancel" onClick={onBack}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Step 3: Paste final code
-  if (step === 'paste_final') {
-    return (
-      <div className="join-group-container">
-        <div className="connection-flow">
-          <div className="flow-step">
-            <div className="step-header">
-              <span className="step-number">3</span>
-              <h2>Paste Final Code</h2>
-            </div>
-
-            <p className="step-description">
-              Paste the final code the host sends back
-            </p>
-
-            <div className="paste-container">
-              <textarea
-                className="paste-input"
-                placeholder="Paste the final code here..."
-                value={pasteValue}
-                onChange={(e) => setPasteValue(e.target.value)}
-                rows={4}
-              />
-
-              <button
-                className="btn-primary"
-                onClick={handlePasteFinal}
-                disabled={!pasteValue.trim()}
-              >
-                <CheckIcon />
-                <span>Complete Connection</span>
-              </button>
-            </div>
-
-            {error && (
-              <div className="error-message">
-                <span>{error}</span>
-              </div>
-            )}
-
-            <button className="btn-text" onClick={() => setStep('showing_response')}>
-              ← Back to response
-            </button>
           </div>
 
           <button className="btn-cancel" onClick={onBack}>
@@ -430,8 +351,8 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
       <div className="join-group-container">
         <div className="join-group-connecting">
           <div className="connecting-spinner" />
-          <h2>Connecting...</h2>
-          <p className="connection-status">Establishing connection to group</p>
+          <h2>Waiting for Host...</h2>
+          <p className="connection-status">The host needs to paste your response code</p>
           <p className="connection-group">Joining: {invite?.groupName}</p>
         </div>
       </div>
@@ -471,7 +392,7 @@ export function JoinGroup({ onBack, onJoined }: JoinGroupProps) {
             <button className="btn-secondary" onClick={onBack}>
               Cancel
             </button>
-            <button className="btn-primary" onClick={() => setStep('paste_invite')}>
+            <button className="btn-primary" onClick={() => { setStep('paste_invite'); setPasteValue(''); setError(null); }}>
               Try Again
             </button>
           </div>

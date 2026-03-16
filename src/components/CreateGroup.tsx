@@ -24,7 +24,7 @@ interface CreateGroupProps {
   onGroupCreated: () => void;
 }
 
-type HostStep = 'disclaimer' | 'create_form' | 'showing_invite' | 'waiting_response' | 'sending_final' | 'ready';
+type HostStep = 'disclaimer' | 'create_form' | 'showing_invite' | 'waiting_response' | 'ready';
 
 interface PendingMember {
   fingerprint: string;
@@ -39,7 +39,6 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
-  const [finalCode, setFinalCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -207,15 +206,9 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
       const answerJson = JSON.stringify({ type: 'answer', sdp: responseData.answerSdp });
       await hostChannelRef.current.completeConnection(answerJson);
 
-      // Generate final confirmation code for the member
-      const finalData = {
-        type: 'group_final',
-        groupId: activeGroup?.id,
-        confirmed: true,
-      };
-      setFinalCode(btoa(JSON.stringify(finalData)));
-      setStep('sending_final');
-      setCopied(false);
+      // Connection will establish automatically via WebRTC ICE
+      // Go straight to ready state
+      setStep('ready');
 
     } catch (err) {
       console.error('[Group] Failed to process response:', err);
@@ -223,22 +216,6 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
     }
   };
 
-  const handleCopyFinal = useCallback(async () => {
-    if (!finalCode) return;
-    try {
-      await navigator.clipboard.writeText(finalCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError('Failed to copy to clipboard');
-    }
-  }, [finalCode]);
-
-  const handleMemberConnected = () => {
-    setStep('ready');
-    setPasteValue('');
-    setFinalCode(null);
-  };
 
   const handleAddAnotherMember = async () => {
     // Create a new WebRTC channel for the next member
@@ -499,59 +476,6 @@ export function CreateGroup({ onBack, onGroupCreated }: CreateGroupProps) {
             <button className="btn-text" onClick={() => setStep('showing_invite')}>
               ← Back to invite
             </button>
-          </div>
-
-          <button className="btn-cancel" onClick={onBack}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Step 3: Send final code
-  if (step === 'sending_final') {
-    return (
-      <div className="create-group-container">
-        <div className="connection-flow">
-          <div className="flow-step">
-            <div className="step-header">
-              <span className="step-number">3</span>
-              <h2>Send Final Code</h2>
-            </div>
-
-            <p className="step-description">
-              Send this final code to complete the member's connection
-            </p>
-
-            <div className="code-container">
-              <div className="code-preview">
-                {finalCode ? (
-                  <code>{finalCode.substring(0, 50)}...</code>
-                ) : (
-                  <span className="loading">Generating...</span>
-                )}
-              </div>
-
-              <button
-                className="btn-copy"
-                onClick={handleCopyFinal}
-                disabled={!finalCode}
-              >
-                <CopyIcon />
-                <span>{copied ? 'Copied!' : 'Copy Final Code'}</span>
-              </button>
-            </div>
-
-            <p className="step-hint">
-              Once they paste this code, they'll be connected to the group.
-            </p>
-
-            <div className="flow-actions">
-              <button className="btn-primary" onClick={handleMemberConnected}>
-                Member Connected
-              </button>
-            </div>
           </div>
 
           <button className="btn-cancel" onClick={onBack}>

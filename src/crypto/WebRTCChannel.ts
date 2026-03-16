@@ -62,33 +62,13 @@ export class WebRTCChannel {
   };
 
   // ICE servers for NAT traversal
-  // STUN: Discovers public IP (free, no relay)
-  // TURN: Relays traffic when direct connection fails (needed for ~20% of connections)
+  // STUN: Discovers public IP (free, stateless, no data relay)
+  // Works for ~80% of NAT configurations. True P2P — no servers relay your data.
   private static readonly ICE_SERVERS: RTCIceServer[] = [
-    // Google STUN servers (free)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // Open Relay TURN servers (free, community-run)
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:80?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turns:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
   ];
 
   constructor(options: WebRTCChannelOptions) {
