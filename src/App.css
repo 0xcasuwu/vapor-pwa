@@ -3292,6 +3292,40 @@ body {
   margin: 16px 0;
 }
 
+/* Group badges for flow steps */
+.group-name-badge {
+  display: inline-block;
+  padding: 8px 16px;
+  background: rgba(0, 255, 242, 0.1);
+  border: 1px solid rgba(0, 255, 242, 0.3);
+  border-radius: var(--radius-full);
+  color: var(--neon-cyan);
+  font-size: 0.8rem;
+  margin-bottom: 24px;
+}
+
+.group-info-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 20px;
+  background: rgba(0, 255, 242, 0.1);
+  border: 1px solid rgba(0, 255, 242, 0.3);
+  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+}
+
+.group-info-badge span {
+  color: var(--neon-cyan);
+  font-size: 0.9rem;
+}
+
+.group-info-badge .host-info {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
 .member-count {
   display: flex;
   align-items: center;
