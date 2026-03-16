@@ -28,16 +28,23 @@ import {
   downloadBlob,
 } from '../crypto/ContactExport';
 
+// Identity record stored under 'current' key
+interface IdentityRecord {
+  publicKey: Uint8Array;
+  encryptedPrivateKey: Uint8Array;
+  fingerprint: string;
+  createdAt: number;
+}
+
+function isIdentityRecord(v: unknown): v is IdentityRecord {
+  return v !== null && typeof v === 'object' && 'fingerprint' in (v as Record<string, unknown>);
+}
+
 // IndexedDB Schema
 interface VaporDB extends DBSchema {
   identity: {
     key: string;
-    value: {
-      publicKey: Uint8Array;
-      encryptedPrivateKey: Uint8Array;
-      fingerprint: string;
-      createdAt: number;
-    } | Uint8Array; // 'current' → identity record, 'encryptedMnemonic' → encrypted bytes
+    value: IdentityRecord | Uint8Array; // 'current' → identity record, 'encryptedMnemonic' → encrypted bytes
   };
   contacts: {
     key: string; // contact id (hash of public key)
@@ -244,7 +251,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
       const database = await getDB();
       const stored = await database.get('identity', 'current');
 
-      if (!stored) {
+      if (!stored || !isIdentityRecord(stored)) {
         set({ state: 'none' });
         return;
       }
@@ -353,7 +360,8 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
 
       // Check if this is a re-import of existing identity
       const database = await getDB();
-      const existing = await database.get('identity', 'current');
+      const existingRaw = await database.get('identity', 'current');
+      const existing = existingRaw && isIdentityRecord(existingRaw) ? existingRaw : null;
 
       if (existing && existing.fingerprint !== fingerprint) {
         // Different identity - clear old contacts
