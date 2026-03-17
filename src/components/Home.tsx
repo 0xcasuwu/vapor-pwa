@@ -15,9 +15,10 @@ interface HomeProps {
   onScanQR: () => void;
   onCreateGroup?: () => void;
   onJoinGroup?: () => void;
+  onReconnect?: (contact: Contact) => void;
 }
 
-export function Home({ onGenerateQR, onScanQR, onCreateGroup, onJoinGroup }: HomeProps) {
+export function Home({ onGenerateQR, onScanQR, onCreateGroup, onJoinGroup, onReconnect }: HomeProps) {
   const [showSettings, setShowSettings] = useState(false);
   const { fingerprint, contacts } = useIdentityStore();
 
@@ -56,7 +57,7 @@ export function Home({ onGenerateQR, onScanQR, onCreateGroup, onJoinGroup }: Hom
 
       <div className="home-content">
         {contacts.length > 0 ? (
-          <ContactsList contacts={contacts} />
+          <ContactsList contacts={contacts} onReconnect={onReconnect} />
         ) : (
           <>
             <div className="security-badge">
@@ -138,7 +139,13 @@ export function Home({ onGenerateQR, onScanQR, onCreateGroup, onJoinGroup }: Hom
   );
 }
 
-function ContactsList({ contacts }: { contacts: Contact[] }) {
+function ContactsList({
+  contacts,
+  onReconnect,
+}: {
+  contacts: Contact[];
+  onReconnect?: (contact: Contact) => void;
+}) {
   // Sort by last seen, then by added date
   const sortedContacts = [...contacts].sort((a, b) => {
     if (a.lastSeen && b.lastSeen) return b.lastSeen - a.lastSeen;
@@ -156,14 +163,20 @@ function ContactsList({ contacts }: { contacts: Contact[] }) {
       </div>
       <div className="contacts-list">
         {sortedContacts.map(contact => (
-          <ContactItem key={contact.id} contact={contact} />
+          <ContactItem key={contact.id} contact={contact} onReconnect={onReconnect} />
         ))}
       </div>
     </div>
   );
 }
 
-function ContactItem({ contact }: { contact: Contact }) {
+function ContactItem({
+  contact,
+  onReconnect,
+}: {
+  contact: Contact;
+  onReconnect?: (contact: Contact) => void;
+}) {
   const publicKeyHex = Array.from(contact.publicKey.slice(0, 4))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
@@ -178,8 +191,21 @@ function ContactItem({ contact }: { contact: Contact }) {
     return `${Math.floor(diff / 86400000)}d`;
   };
 
+  // Check if contact supports zero-code reconnection
+  const canReconnect = contact.libp2pPeerId && contact.libp2pPeerId.length > 0;
+
+  const handleClick = () => {
+    if (canReconnect && onReconnect) {
+      onReconnect(contact);
+    }
+  };
+
   return (
-    <div className="contact-item">
+    <div
+      className={`contact-item ${canReconnect ? 'contact-reconnectable' : ''}`}
+      onClick={handleClick}
+      style={{ cursor: canReconnect ? 'pointer' : 'default' }}
+    >
       <div className="contact-avatar">
         {contact.isOnline && <span className="online-dot" />}
         <span>{contact.nickname.charAt(0).toUpperCase()}</span>
@@ -191,11 +217,34 @@ function ContactItem({ contact }: { contact: Contact }) {
       <div className="contact-status">
         {contact.isOnline ? (
           <span className="status-online">online</span>
+        ) : canReconnect ? (
+          <button
+            className="btn-reconnect"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClick();
+            }}
+          >
+            <ReconnectIcon />
+            <span>reconnect</span>
+          </button>
         ) : contact.lastSeen ? (
           <span className="contact-time">{formatTime(contact.lastSeen)}</span>
-        ) : null}
+        ) : (
+          <span className="contact-legacy">no relay</span>
+        )}
       </div>
     </div>
+  );
+}
+
+function ReconnectIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M23 4v6h-6" />
+      <path d="M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
   );
 }
 

@@ -54,6 +54,19 @@ import { WebRTCChannel } from '../crypto/WebRTCChannel';
 import { generateSafetyNumber, formatSafetyNumber } from '../crypto/SafetyNumber';
 // getCombinedPublicKey removed - we use only classical keys for safety numbers
 
+// libp2p reconnection imports
+import {
+  initializeNode,
+  startNode,
+  getNode,
+  dialPeer,
+  getPeerIdString,
+} from '../libp2p/node';
+import {
+  sendOfferAndReceiveAnswer,
+  setupSignalingHandler,
+} from '../libp2p/signaling';
+
 export interface Message {
   id: string;
   content: string;
@@ -71,7 +84,12 @@ export type SessionState =
   | 'showing_answer'        // Alice: Showing answer QR for Bob to scan
   | 'connecting'            // WebRTC handshake in progress
   | 'active'                // Session established
-  | 'error';                // Error state
+  | 'error'                 // Error state
+  // Reconnection states (libp2p Circuit Relay)
+  | 'reconnecting_relay'    // Connecting to libp2p relay network
+  | 'reconnecting_peer'     // Dialing peer via relay circuit
+  | 'reconnecting_signaling' // Exchanging SDP via libp2p signaling
+  | 'reconnecting_webrtc';  // Establishing direct WebRTC
 
 // Role in the handshake
 export type HandshakeRole = 'initiator' | 'responder' | null;
@@ -91,6 +109,8 @@ interface SessionStore {
   safetyNumber: string | null;        // Human-readable safety number for MITM verification
   safetyNumberVerified: boolean;      // Whether user has verified the safety number
   iceDiagnostics: IceDiagnostics | null;  // ICE connection diagnostics for debugging
+  reconnectionProgress: string | null;    // Human-readable reconnection status
+  peerLibp2pPeerId: string | null;        // Peer's libp2p peer ID for reconnection
 
   // Internal (not exposed directly)
   _keyPair: HybridKeyPairData | null;
@@ -113,6 +133,19 @@ interface SessionStore {
 
   // Safety number verification
   verifySafetyNumber: () => void;
+
+  // Reconnection via libp2p Circuit Relay
+  initiateReconnection: (
+    contactId: string,
+    peerPublicKey: Uint8Array,
+    libp2pPeerId: string,
+    libp2pMultiaddrs?: string[]
+  ) => Promise<boolean>;
+  handleIncomingReconnection: (
+    peerId: string,
+    offer: RTCSessionDescriptionInit
+  ) => Promise<RTCSessionDescriptionInit>;
+  reconnectionProgress: string | null;  // Human-readable status
 
   // Legacy (kept for compatibility)
   completeSession: (answerJson: string) => Promise<void>;
@@ -139,6 +172,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   safetyNumber: null,
   safetyNumberVerified: false,
   iceDiagnostics: null,
+  reconnectionProgress: null,
+  peerLibp2pPeerId: null,
 
   _keyPair: null,
   _peerPublicKeys: null,
@@ -158,8 +193,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Generate hybrid key pair
       const keyPair = await generateHybridKeyPair();
 
-      // Generate QR payload
-      const payload = generateQRPayload(keyPair.publicKey);
+      // Get libp2p peer ID for reconnection capability (if available)
+      const libp2pPeerId = getPeerIdString() ?? undefined;
+
+      // Generate QR payload (v3 if we have peer ID, v2 otherwise)
+      const payload = generateQRPayload(keyPair.publicKey, libp2pPeerId);
 
       // Encode for QR display (full hybrid payload with quantum-resistant keys)
       const qrString = encodeToCompressedBase64(payload);
@@ -267,6 +305,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // We use only classical keys for safety numbers since that's what both sides have
       const peerPublicKeys = payload.classicalPublicKey;
 
+      // Capture peer's libp2p peer ID if present (v3 payload)
+      const peerLibp2pPeerId = payload.libp2pPeerId ?? null;
+
       // Initialize WebRTC as initiator (Bob creates the offer)
       const webrtc = new WebRTCChannel({
         onMessage: (data) => {
@@ -321,6 +362,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         _webrtc: webrtc,
         signalingQrString: offerQr,
         isQuantumSecure: true,
+        peerLibp2pPeerId,  // Store peer's libp2p peer ID for reconnection
       });
 
       return { offerQr };
@@ -566,6 +608,196 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
+   * Initiate reconnection to a contact via libp2p Circuit Relay
+   * This is the zero-code reconnection flow - no QR exchange needed
+   *
+   * @param contactId - Contact's ID in the identity store
+   * @param peerPublicKey - Contact's X25519 public key (for session key derivation)
+   * @param libp2pPeerId - Contact's libp2p peer ID (e.g., "12D3KooW...")
+   * @param libp2pMultiaddrs - Optional: Last known relay addresses for faster dial
+   */
+  initiateReconnection: async (
+    contactId: string,
+    peerPublicKey: Uint8Array,
+    libp2pPeerId: string,
+    libp2pMultiaddrs?: string[]
+  ) => {
+    set({
+      state: 'reconnecting_relay',
+      error: null,
+      reconnectionProgress: 'Connecting to relay network...',
+    });
+
+    try {
+      // Step 1: Ensure libp2p node is running
+      const node = getNode();
+      if (!node) {
+        throw new Error('libp2p not initialized - please restart the app');
+      }
+
+      if (node.status !== 'listening') {
+        set({ reconnectionProgress: 'Starting relay connection...' });
+        await startNode();
+      }
+
+      // Step 2: Generate our session key pair for this reconnection
+      set({ reconnectionProgress: 'Generating session keys...' });
+      const ourKeyPair = await generateHybridKeyPair();
+
+      // Step 3: Dial the peer via relay
+      set({
+        state: 'reconnecting_peer',
+        reconnectionProgress: `Dialing ${libp2pPeerId.slice(0, 16)}...`,
+      });
+
+      const relayAddr = libp2pMultiaddrs?.[0]; // Use first known relay addr
+      await dialPeer(libp2pPeerId, relayAddr);
+
+      // Step 4: Create WebRTC connection
+      set({
+        state: 'reconnecting_signaling',
+        reconnectionProgress: 'Exchanging connection data...',
+      });
+
+      const webrtc = new WebRTCChannel({
+        onMessage: (data) => get()._handleIncomingMessage(data),
+        onStateChange: async (state) => {
+          set({ connectionState: state });
+          if (state === 'connected') {
+            const { _keyPair, _peerPublicKeys } = get();
+            if (_keyPair && _peerPublicKeys) {
+              const localClassicalKey = _keyPair.publicKey.classical;
+              const safetyNumber = await generateSafetyNumber(localClassicalKey, _peerPublicKeys);
+              set({
+                state: 'active',
+                safetyNumber: formatSafetyNumber(safetyNumber),
+                reconnectionProgress: null,
+              });
+            } else {
+              set({ state: 'active', reconnectionProgress: null });
+            }
+          } else if (state === 'failed') {
+            set({
+              state: 'error',
+              error: 'WebRTC connection failed',
+              reconnectionProgress: null,
+            });
+          }
+        },
+        onSignalingData: () => {},
+        onIceDiagnostics: (diagnostics) => set({ iceDiagnostics: diagnostics }),
+      });
+
+      // Create WebRTC offer
+      const offerJson = await webrtc.initAsInitiator();
+      const offerData = JSON.parse(offerJson);
+
+      // Step 5: Exchange SDP via libp2p signaling
+      set({
+        state: 'reconnecting_webrtc',
+        reconnectionProgress: 'Establishing secure connection...',
+      });
+
+      const sdpAnswer = await sendOfferAndReceiveAnswer(
+        libp2pPeerId,
+        relayAddr,
+        { type: 'offer', sdp: offerData.sdp }
+      );
+
+      // Complete WebRTC connection with answer
+      const answerJson = JSON.stringify(sdpAnswer);
+      await webrtc.completeConnection(answerJson);
+
+      // Derive session key using hybrid key exchange
+      // For reconnection, we use our new keys + stored peer's public key
+      const result = await deriveSharedSecretAsInitiator(
+        ourKeyPair.privateKey,
+        { classical: peerPublicKey, pq: new Uint8Array(0) } // Classical-only for reconnection
+      );
+
+      set({
+        _keyPair: ourKeyPair,
+        _peerPublicKeys: peerPublicKey,
+        _sessionKey: result.sharedSecret,
+        _webrtc: webrtc,
+        isQuantumSecure: false, // Reconnection uses classical keys only
+      });
+
+      return true;
+    } catch (error) {
+      console.error('[reconnection] Failed:', error);
+      set({
+        state: 'error',
+        error: error instanceof Error ? error.message : 'Reconnection failed',
+        reconnectionProgress: null,
+      });
+      return false;
+    }
+  },
+
+  /**
+   * Handle incoming reconnection request (when someone dials us via libp2p)
+   * This is called by the signaling handler when we receive an SDP offer
+   *
+   * @param peerId - The peer ID of the caller
+   * @param offer - The SDP offer from the caller
+   * @returns The SDP answer to send back
+   */
+  handleIncomingReconnection: async (
+    peerId: string,
+    offer: RTCSessionDescriptionInit
+  ) => {
+    set({
+      state: 'reconnecting_signaling',
+      reconnectionProgress: `Incoming connection from ${peerId.slice(0, 16)}...`,
+    });
+
+    try {
+      // Generate our session key pair
+      const ourKeyPair = await generateHybridKeyPair();
+
+      // Create WebRTC connection as responder
+      const webrtc = new WebRTCChannel({
+        onMessage: (data) => get()._handleIncomingMessage(data),
+        onStateChange: async (state) => {
+          set({ connectionState: state });
+          if (state === 'connected') {
+            set({
+              state: 'active',
+              reconnectionProgress: null,
+            });
+          } else if (state === 'failed') {
+            set({
+              state: 'error',
+              error: 'WebRTC connection failed',
+              reconnectionProgress: null,
+            });
+          }
+        },
+        onSignalingData: () => {},
+        onIceDiagnostics: (diagnostics) => set({ iceDiagnostics: diagnostics }),
+      });
+
+      // Create answer from offer
+      const offerJson = JSON.stringify(offer);
+      const answerJson = await webrtc.initAsResponder(offerJson);
+      const answerData = JSON.parse(answerJson);
+
+      set({
+        _keyPair: ourKeyPair,
+        _webrtc: webrtc,
+        state: 'reconnecting_webrtc',
+        reconnectionProgress: 'Establishing secure connection...',
+      });
+
+      return { type: 'answer' as const, sdp: answerData.sdp };
+    } catch (error) {
+      console.error('[reconnection] Failed to handle incoming:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Destroy the session and all cryptographic material
    */
   destroySession: () => {
@@ -601,6 +833,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       safetyNumber: null,
       safetyNumberVerified: false,
       iceDiagnostics: null,
+      reconnectionProgress: null,
+      peerLibp2pPeerId: null,
       _keyPair: null,
       _peerPublicKeys: null,
       _sessionKey: null,

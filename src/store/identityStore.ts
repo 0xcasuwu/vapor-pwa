@@ -27,6 +27,7 @@ import {
   generateExportFilename,
   downloadBlob,
 } from '../crypto/ContactExport';
+import { initializeNode, startNode } from '../libp2p/node';
 
 // Identity record stored under 'current' key
 interface IdentityRecord {
@@ -73,6 +74,9 @@ export interface Contact {
   pushSubscription?: PushSubscriptionData;  // For sending presence to this contact
   isOnline?: boolean;                        // Current online status
   lastPresenceUpdate?: number;               // When status last changed
+  // libp2p reconnection fields
+  libp2pPeerId?: string;                     // e.g., "12D3KooWRm8J3iL796zPFi..."
+  libp2pMultiaddrs?: string[];               // Last known relay addresses for faster reconnection
 }
 
 type IdentityState = 'loading' | 'none' | 'locked' | 'unlocked';
@@ -96,7 +100,15 @@ interface IdentityStore {
   clearMnemonic: () => void;
 
   // Contacts
-  addContact: (publicKey: Uint8Array, nickname: string, pushSubscription?: PushSubscriptionData) => Promise<Contact>;
+  addContact: (
+    publicKey: Uint8Array,
+    nickname: string,
+    options?: {
+      pushSubscription?: PushSubscriptionData;
+      libp2pPeerId?: string;
+      libp2pMultiaddrs?: string[];
+    }
+  ) => Promise<Contact>;
   updateContactNickname: (id: string, nickname: string) => Promise<void>;
   updateContactPushSubscription: (id: string, pushSubscription: PushSubscriptionData) => Promise<void>;
   updateContactPresence: (id: string, isOnline: boolean) => Promise<void>;
@@ -340,6 +352,16 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         error: null,
       });
 
+      // Initialize libp2p node for reconnection capability
+      // This runs async in background - don't block identity creation
+      initializeNode(mnemonic).then(() => {
+        startNode().catch((err) => {
+          console.warn('[identity] Failed to start libp2p node:', err);
+        });
+      }).catch((err) => {
+        console.warn('[identity] Failed to initialize libp2p node:', err);
+      });
+
       return mnemonic;
     } catch (error) {
       set({
@@ -407,6 +429,16 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         error: null,
       });
 
+      // Initialize libp2p node for reconnection capability
+      // This runs async in background - don't block identity import
+      initializeNode(mnemonic).then(() => {
+        startNode().catch((err) => {
+          console.warn('[identity] Failed to start libp2p node:', err);
+        });
+      }).catch((err) => {
+        console.warn('[identity] Failed to initialize libp2p node:', err);
+      });
+
       return true;
     } catch (error) {
       set({
@@ -432,15 +464,28 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
 
   /**
    * Add a new contact
+   * @param publicKey - Contact's X25519 public key
+   * @param nickname - Display name for the contact
+   * @param options - Optional fields: pushSubscription, libp2pPeerId, libp2pMultiaddrs
    */
-  addContact: async (publicKey: Uint8Array, nickname: string, pushSubscription?: PushSubscriptionData) => {
+  addContact: async (
+    publicKey: Uint8Array,
+    nickname: string,
+    options?: {
+      pushSubscription?: PushSubscriptionData;
+      libp2pPeerId?: string;
+      libp2pMultiaddrs?: string[];
+    }
+  ) => {
     const id = await hashPublicKey(publicKey);
     const contact: Contact = {
       id,
       nickname: nickname.trim(),
       publicKey,
       addedAt: Date.now(),
-      pushSubscription,
+      pushSubscription: options?.pushSubscription,
+      libp2pPeerId: options?.libp2pPeerId,
+      libp2pMultiaddrs: options?.libp2pMultiaddrs,
     };
 
     const database = await getDB();
