@@ -15,18 +15,21 @@ import { Onboarding } from './components/Onboarding';
 import { CreateGroup } from './components/CreateGroup';
 import { JoinGroup } from './components/JoinGroup';
 import { GroupChat } from './components/GroupChat';
+import { ReconnectFlow } from './components/ReconnectFlow';
+import type { Contact } from './store/identityStore';
 import { useSessionStore } from './store/sessionStore';
 import { useIdentityStore } from './store/identityStore';
 import { parseInviteFromUrl, clearInviteFromUrl } from './utils/share';
-import { initPresence, broadcastPresence } from './presence/PushPresence';
+import { startPresence, stopPresence } from './frtun';
 import './App.css';
 
-type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining' | 'create-group' | 'join-group' | 'group-chat';
+type Screen = 'home' | 'generate' | 'scan' | 'chat' | 'joining' | 'create-group' | 'join-group' | 'group-chat' | 'reconnect';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [error, setError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [reconnectContact, setReconnectContact] = useState<Contact | null>(null);
 
   const { state: sessionState } = useSessionStore();
   const { state: identityState, initialize: initIdentity } = useIdentityStore();
@@ -39,41 +42,39 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Initialize presence and broadcast online status
+  // Initialize frtun presence system (gossipsub-based)
   useEffect(() => {
     if (identityState !== 'unlocked' || !fingerprint) return;
 
-    // Initialize push subscription
-    initPresence().then(subscription => {
-      if (subscription) {
-        console.log('[Presence] Push subscription ready');
+    const { updateContactPresence } = useIdentityStore.getState();
+
+    // Start presence system with callback to update contact status
+    const handlePresenceUpdate = (peerId: string, isOnline: boolean, _timestamp: number) => {
+      // Find contact by frtun peer ID and update their presence
+      const contact = contacts.find(c => c.frtunPeerId === peerId);
+      if (contact) {
+        updateContactPresence(contact.id, isOnline);
       }
-    });
-
-    // Broadcast online when app loads
-    broadcastPresence(contacts, 'online', fingerprint);
-
-    // Broadcast offline when app closes
-    const handleBeforeUnload = () => {
-      // Using navigator.sendBeacon would be more reliable here
-      // but for now we'll rely on the service worker
-      broadcastPresence(contacts, 'offline', fingerprint);
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        broadcastPresence(contacts, 'away', fingerprint);
-      } else if (document.visibilityState === 'visible') {
-        broadcastPresence(contacts, 'online', fingerprint);
-      }
+    startPresence(handlePresenceUpdate).catch(err => {
+      console.warn('[App] Failed to start presence:', err);
+    });
+
+    // Stop presence when app unloads
+    const handleBeforeUnload = () => {
+      stopPresence().catch(() => {
+        // Ignore errors during shutdown
+      });
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopPresence().catch(() => {
+        // Ignore errors during cleanup
+      });
     };
   }, [identityState, fingerprint, contacts]);
 
@@ -125,6 +126,11 @@ function App() {
 
   const handleJoinGroup = () => {
     setScreen('join-group');
+  };
+
+  const handleReconnect = (contact: Contact) => {
+    setReconnectContact(contact);
+    setScreen('reconnect');
   };
 
   const handleGroupCreated = () => {
@@ -206,6 +212,7 @@ function App() {
           onScanQR={handleScanQR}
           onCreateGroup={handleCreateGroup}
           onJoinGroup={handleJoinGroup}
+          onReconnect={handleReconnect}
         />
       )}
 
@@ -239,6 +246,17 @@ function App() {
 
       {screen === 'group-chat' && (
         <GroupChat onLeave={handleLeaveGroup} />
+      )}
+
+      {screen === 'reconnect' && reconnectContact && (
+        <ReconnectFlow
+          contact={reconnectContact}
+          onConnected={handleConnectionComplete}
+          onCancel={() => {
+            setReconnectContact(null);
+            setScreen('home');
+          }}
+        />
       )}
 
       {/* Error Toast */}

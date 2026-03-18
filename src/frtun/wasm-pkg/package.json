@@ -1,0 +1,15 @@
+{
+  "name": "frtun-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "frtun_wasm_bg.wasm",
+    "frtun_wasm.js",
+    "frtun_wasm.d.ts"
+  ],
+  "main": "frtun_wasm.js",
+  "types": "frtun_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -2,7 +2,7 @@
  * ReconnectFlow.tsx
  * Vapor PWA - Zero-Code Reconnection UI
  *
- * Shows progress of libp2p Circuit Relay reconnection.
+ * Shows progress of frtun overlay network reconnection.
  * User clicks a contact → this component shows connection progress → Chat opens.
  */
 
@@ -27,15 +27,16 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
 
   // Start reconnection on mount
   useEffect(() => {
-    if (!contact.libp2pPeerId) {
+    // Support both frtun (v4) and libp2p (v3) peer IDs for backward compatibility
+    const peerId = contact.frtunPeerId;
+    if (!peerId) {
       return;
     }
 
     initiateReconnection(
       contact.id,
       contact.publicKey,
-      contact.libp2pPeerId,
-      contact.libp2pMultiaddrs
+      peerId
     );
   }, [contact, initiateReconnection]);
 
@@ -54,9 +55,9 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
   // Get current step for progress indicator
   const getStepNumber = () => {
     switch (state) {
-      case 'reconnecting_relay': return 1;
-      case 'reconnecting_peer': return 2;
-      case 'reconnecting_signaling': return 3;
+      case 'reconnecting_overlay': return 1;
+      case 'reconnecting_stream': return 2;
+      case 'reconnecting_handshake': return 3;
       case 'reconnecting_webrtc': return 4;
       default: return 0;
     }
@@ -89,7 +90,7 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
         <div className="reconnect-steps">
           <Step
             number={1}
-            label="Relay Network"
+            label="Overlay Network"
             active={currentStep === 1}
             completed={currentStep > 1}
             error={isError && currentStep === 1}
@@ -97,7 +98,7 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
           <StepConnector active={currentStep > 1} />
           <Step
             number={2}
-            label="Dial Peer"
+            label="Open Stream"
             active={currentStep === 2}
             completed={currentStep > 2}
             error={isError && currentStep === 2}
@@ -105,7 +106,7 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
           <StepConnector active={currentStep > 2} />
           <Step
             number={3}
-            label="Signaling"
+            label="Handshake"
             active={currentStep === 3}
             completed={currentStep > 3}
             error={isError && currentStep === 3}
@@ -113,7 +114,7 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
           <StepConnector active={currentStep > 3} />
           <Step
             number={4}
-            label="WebRTC"
+            label="Secure Channel"
             active={currentStep === 4}
             completed={state === 'active'}
             error={isError && currentStep === 4}
@@ -147,8 +148,7 @@ export function ReconnectFlow({ contact, onConnected, onCancel }: ReconnectFlowP
                 onClick={() => initiateReconnection(
                   contact.id,
                   contact.publicKey,
-                  contact.libp2pPeerId!,
-                  contact.libp2pMultiaddrs
+                  contact.frtunPeerId!
                 )}
               >
                 Retry

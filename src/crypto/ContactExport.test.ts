@@ -32,13 +32,7 @@ const mockContacts = [
     nickname: 'Bob',
     publicKey: new Uint8Array([9, 10, 11, 12, 13, 14, 15, 16]),
     addedAt: Date.now() - 172800000, // 2 days ago
-    pushSubscription: {
-      endpoint: 'https://push.example.com/123',
-      keys: {
-        p256dh: 'test-p256dh-key',
-        auth: 'test-auth-key',
-      },
-    },
+    frtunPeerId: 'frtun1qp5d82s3w7z9x8y6c5v4b3n2m1lkjhgfdsa0987.peer',
   },
 ];
 
@@ -107,11 +101,11 @@ describe('ContactExport', () => {
       expect(alice!.id).toBe('contact-1');
       expect(alice!.publicKey).toEqual(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
 
-      // Check second contact with push subscription
+      // Check second contact with frtun peer ID
       const bob = result.contacts.find(c => c.nickname === 'Bob');
       expect(bob).toBeDefined();
-      expect(bob!.pushSubscription).toBeDefined();
-      expect(bob!.pushSubscription!.endpoint).toBe('https://push.example.com/123');
+      expect(bob!.frtunPeerId).toBeDefined();
+      expect(bob!.frtunPeerId).toBe('frtun1qp5d82s3w7z9x8y6c5v4b3n2m1lkjhgfdsa0987.peer');
     });
 
     it('should fail with wrong decryption key', async () => {
@@ -167,13 +161,7 @@ describe('ContactExport', () => {
           publicKey: new Uint8Array(32).fill(42),
           addedAt: 1700000000000,
           lastSeen: 1700001000000,
-          pushSubscription: {
-            endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
-            keys: {
-              p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0',
-              auth: 'tBHItJI5svbpez7KI4CCXg',
-            },
-          },
+          frtunPeerId: 'frtun1qp5d82s3w7z9x8y6c5v4b3n2m1lkjhgfdsa0987.peer',
         },
       ];
 
@@ -189,7 +177,7 @@ describe('ContactExport', () => {
       expect(imported.addedAt).toBe(original.addedAt);
       expect(imported.lastSeen).toBe(original.lastSeen);
       expect(imported.publicKey).toEqual(original.publicKey);
-      expect(imported.pushSubscription).toEqual(original.pushSubscription);
+      expect(imported.frtunPeerId).toBe(original.frtunPeerId);
     });
 
     it('should handle contacts without optional fields', async () => {
@@ -208,7 +196,7 @@ describe('ContactExport', () => {
 
       expect(result.contacts[0].id).toBe('minimal');
       expect(result.contacts[0].lastSeen).toBeUndefined();
-      expect(result.contacts[0].pushSubscription).toBeUndefined();
+      expect(result.contacts[0].frtunPeerId).toBeUndefined();
     });
   });
 });

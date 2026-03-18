@@ -27,7 +27,7 @@ import {
   generateExportFilename,
   downloadBlob,
 } from '../crypto/ContactExport';
-import { initializeNode, startNode } from '../libp2p/node';
+import { deriveFrtunIdentity, initializeFrtunClient } from '../frtun';
 
 // Identity record stored under 'current' key
 interface IdentityRecord {
@@ -58,25 +58,17 @@ interface VaporDB extends DBSchema {
   };
 }
 
-// Push subscription data for presence notifications
-export interface PushSubscriptionData {
-  endpoint: string;
-  keys: { p256dh: string; auth: string };
-}
-
 export interface Contact {
   id: string;
   nickname: string;
   publicKey: Uint8Array;  // 32 bytes X25519
   addedAt: number;
   lastSeen?: number;
-  // Presence fields
-  pushSubscription?: PushSubscriptionData;  // For sending presence to this contact
+  // Presence fields (via gossipsub)
   isOnline?: boolean;                        // Current online status
   lastPresenceUpdate?: number;               // When status last changed
-  // libp2p reconnection fields
-  libp2pPeerId?: string;                     // e.g., "12D3KooWRm8J3iL796zPFi..."
-  libp2pMultiaddrs?: string[];               // Last known relay addresses for faster reconnection
+  // frtun reconnection field
+  frtunPeerId?: string;                      // e.g., "frtun1xxx.peer"
 }
 
 type IdentityState = 'loading' | 'none' | 'locked' | 'unlocked';
@@ -104,13 +96,11 @@ interface IdentityStore {
     publicKey: Uint8Array,
     nickname: string,
     options?: {
-      pushSubscription?: PushSubscriptionData;
-      libp2pPeerId?: string;
-      libp2pMultiaddrs?: string[];
+      frtunPeerId?: string;
     }
   ) => Promise<Contact>;
   updateContactNickname: (id: string, nickname: string) => Promise<void>;
-  updateContactPushSubscription: (id: string, pushSubscription: PushSubscriptionData) => Promise<void>;
+  updateContactFrtunPeerId: (id: string, frtunPeerId: string) => Promise<void>;
   updateContactPresence: (id: string, isOnline: boolean) => Promise<void>;
   removeContact: (id: string) => Promise<void>;
   getContactByPublicKey: (publicKey: Uint8Array) => Contact | null;
@@ -352,14 +342,14 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         error: null,
       });
 
-      // Initialize libp2p node for reconnection capability
+      // Initialize frtun client for overlay network reconnection
       // This runs async in background - don't block identity creation
-      initializeNode(mnemonic).then(() => {
-        startNode().catch((err) => {
-          console.warn('[identity] Failed to start libp2p node:', err);
+      deriveFrtunIdentity(mnemonic).then((frtunIdentity) => {
+        initializeFrtunClient(frtunIdentity).catch((err) => {
+          console.warn('[identity] Failed to initialize frtun client:', err);
         });
       }).catch((err) => {
-        console.warn('[identity] Failed to initialize libp2p node:', err);
+        console.warn('[identity] Failed to derive frtun identity:', err);
       });
 
       return mnemonic;
@@ -429,14 +419,14 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
         error: null,
       });
 
-      // Initialize libp2p node for reconnection capability
+      // Initialize frtun client for overlay network reconnection
       // This runs async in background - don't block identity import
-      initializeNode(mnemonic).then(() => {
-        startNode().catch((err) => {
-          console.warn('[identity] Failed to start libp2p node:', err);
+      deriveFrtunIdentity(mnemonic).then((frtunIdentity) => {
+        initializeFrtunClient(frtunIdentity).catch((err) => {
+          console.warn('[identity] Failed to initialize frtun client:', err);
         });
       }).catch((err) => {
-        console.warn('[identity] Failed to initialize libp2p node:', err);
+        console.warn('[identity] Failed to derive frtun identity:', err);
       });
 
       return true;
@@ -466,15 +456,13 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
    * Add a new contact
    * @param publicKey - Contact's X25519 public key
    * @param nickname - Display name for the contact
-   * @param options - Optional fields: pushSubscription, libp2pPeerId, libp2pMultiaddrs
+   * @param options - Optional fields: frtunPeerId for overlay reconnection
    */
   addContact: async (
     publicKey: Uint8Array,
     nickname: string,
     options?: {
-      pushSubscription?: PushSubscriptionData;
-      libp2pPeerId?: string;
-      libp2pMultiaddrs?: string[];
+      frtunPeerId?: string;
     }
   ) => {
     const id = await hashPublicKey(publicKey);
@@ -483,9 +471,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
       nickname: nickname.trim(),
       publicKey,
       addedAt: Date.now(),
-      pushSubscription: options?.pushSubscription,
-      libp2pPeerId: options?.libp2pPeerId,
-      libp2pMultiaddrs: options?.libp2pMultiaddrs,
+      frtunPeerId: options?.frtunPeerId,
     };
 
     const database = await getDB();
@@ -562,18 +548,18 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
   },
 
   /**
-   * Update contact's push subscription
+   * Update contact's frtun peer ID for overlay reconnection
    */
-  updateContactPushSubscription: async (id: string, pushSubscription: PushSubscriptionData) => {
+  updateContactFrtunPeerId: async (id: string, frtunPeerId: string) => {
     const database = await getDB();
     const contact = await database.get('contacts', id);
 
     if (contact) {
-      contact.pushSubscription = pushSubscription;
+      contact.frtunPeerId = frtunPeerId;
       await database.put('contacts', contact);
 
       const contacts = get().contacts.map(c =>
-        c.id === id ? { ...c, pushSubscription } : c
+        c.id === id ? { ...c, frtunPeerId } : c
       );
       set({ contacts });
     }
@@ -649,7 +635,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
           const updated: Contact = {
             ...existing,
             nickname: importedContact.nickname,
-            pushSubscription: importedContact.pushSubscription,
+            frtunPeerId: importedContact.frtunPeerId,
           };
           await database.put('contacts', updated);
           imported++;
@@ -664,7 +650,7 @@ export const useIdentityStore = create<IdentityStore>((set, get) => ({
           publicKey: importedContact.publicKey,
           addedAt: importedContact.addedAt,
           lastSeen: importedContact.lastSeen,
-          pushSubscription: importedContact.pushSubscription,
+          frtunPeerId: importedContact.frtunPeerId,
         };
         await database.put('contacts', newContact);
         imported++;

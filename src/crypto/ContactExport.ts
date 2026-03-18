@@ -23,10 +23,7 @@ export interface ContactExportEntry {
   publicKey: string; // base64 encoded
   addedAt: number;
   lastSeen?: number;
-  pushSubscription?: {
-    endpoint: string;
-    keys: { p256dh: string; auth: string };
-  };
+  frtunPeerId?: string;
 }
 
 export interface ContactExportData {
@@ -75,10 +72,7 @@ export async function exportContacts(
     publicKey: Uint8Array;
     addedAt: number;
     lastSeen?: number;
-    pushSubscription?: {
-      endpoint: string;
-      keys: { p256dh: string; auth: string };
-    };
+    frtunPeerId?: string;
   }>,
   storageKey: Uint8Array,
   fingerprint: string
@@ -90,7 +84,7 @@ export async function exportContacts(
     publicKey: uint8ToBase64(contact.publicKey),
     addedAt: contact.addedAt,
     lastSeen: contact.lastSeen,
-    pushSubscription: contact.pushSubscription,
+    frtunPeerId: contact.frtunPeerId,
   }));
 
   const exportData: ContactExportData = {
@@ -129,10 +123,7 @@ export async function importContacts(
     publicKey: Uint8Array;
     addedAt: number;
     lastSeen?: number;
-    pushSubscription?: {
-      endpoint: string;
-      keys: { p256dh: string; auth: string };
-    };
+    frtunPeerId?: string;
   }>;
   exportedAt: number;
   sourceFingerprint: string;
@@ -174,7 +165,7 @@ export async function importContacts(
     publicKey: base64ToUint8(entry.publicKey),
     addedAt: entry.addedAt,
     lastSeen: entry.lastSeen,
-    pushSubscription: entry.pushSubscription,
+    frtunPeerId: entry.frtunPeerId,
   }));
 
   return {

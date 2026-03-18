@@ -32,7 +32,8 @@ import { KEY_SIZES, getCombinedPublicKey } from './HybridKeyPair';
 // Protocol constants (must match iOS)
 export const VERSION_CLASSIC_ONLY = 0x01;
 export const VERSION_HYBRID = 0x02;
-export const VERSION_HYBRID_LIBP2P = 0x03;  // v3: hybrid + libp2p peer ID
+export const VERSION_HYBRID_LIBP2P = 0x03;  // v3: hybrid + libp2p peer ID (deprecated)
+export const VERSION_HYBRID_FRTUN = 0x04;   // v4: hybrid + frtun peer ID
 // TODO: Restore to 60 seconds after testing
 export const DEFAULT_EXPIRY_SECONDS = 3600; // 1 hour for testing
 
@@ -55,25 +56,27 @@ export interface HybridQRPayload {
   pqPublicKey: Uint8Array;
   nonce: Uint8Array;
   timestamp: number;
-  // v3: libp2p peer ID for zero-code reconnection
+  // v3: libp2p peer ID for zero-code reconnection (deprecated)
   libp2pPeerId?: string;
+  // v4: frtun peer ID for overlay network reconnection
+  frtunPeerId?: string;
 }
 
 /**
  * Generate a new QR payload from a hybrid public key
  * @param publicKey - The hybrid public key (X25519 + ML-KEM-768)
- * @param libp2pPeerId - Optional libp2p peer ID for reconnection (v3 protocol)
+ * @param frtunPeerId - Optional frtun peer ID for reconnection (v4 protocol)
  */
 export function generateQRPayload(
   publicKey: HybridPublicKey,
-  libp2pPeerId?: string
+  frtunPeerId?: string
 ): HybridQRPayload {
   // Generate secure random nonce
   const nonce = new Uint8Array(32);
   crypto.getRandomValues(nonce);
 
-  // Use v3 protocol if peer ID provided, otherwise v2 for compatibility
-  const version = libp2pPeerId ? VERSION_HYBRID_LIBP2P : VERSION_HYBRID;
+  // Use v4 protocol if frtun peer ID provided, otherwise v2 for compatibility
+  const version = frtunPeerId ? VERSION_HYBRID_FRTUN : VERSION_HYBRID;
 
   return {
     version,
@@ -81,23 +84,23 @@ export function generateQRPayload(
     pqPublicKey: publicKey.pq,
     nonce,
     timestamp: Date.now() / 1000, // Unix timestamp in seconds
-    libp2pPeerId,
+    frtunPeerId,
   };
 }
 
 /**
  * Encode payload to binary format
  * v2 Format: version (1) + classical_pk (32) + pq_pk (1184) + nonce (32) + timestamp (8)
- * v3 Format: v2 + peer_id_len (1) + peer_id (variable)
+ * v3/v4 Format: v2 + peer_id_len (1) + peer_id (variable)
  */
 export function encodePayload(payload: HybridQRPayload): Uint8Array {
   // Calculate total size based on version
-  const peerIdBytes = payload.libp2pPeerId
-    ? new TextEncoder().encode(payload.libp2pPeerId)
-    : new Uint8Array(0);
+  // v4 uses frtunPeerId, v3 uses libp2pPeerId
+  const peerIdStr = payload.frtunPeerId ?? payload.libp2pPeerId ?? '';
+  const peerIdBytes = peerIdStr ? new TextEncoder().encode(peerIdStr) : new Uint8Array(0);
 
-  const isV3 = payload.version === VERSION_HYBRID_LIBP2P;
-  const totalSize = isV3
+  const hasPeerId = payload.version === VERSION_HYBRID_FRTUN || payload.version === VERSION_HYBRID_LIBP2P;
+  const totalSize = hasPeerId
     ? PAYLOAD_SIZES.HYBRID_LIBP2P_BASE + peerIdBytes.length
     : PAYLOAD_SIZES.HYBRID_TOTAL;
 
@@ -127,8 +130,8 @@ export function encodePayload(payload: HybridQRPayload): Uint8Array {
   view.setFloat64(offset, payload.timestamp, true);
   offset += PAYLOAD_SIZES.TIMESTAMP;
 
-  // v3: Peer ID (length prefix + UTF-8 bytes)
-  if (isV3) {
+  // v3/v4: Peer ID (length prefix + UTF-8 bytes)
+  if (hasPeerId) {
     view.setUint8(offset, peerIdBytes.length);
     offset += 1;
     bytes.set(peerIdBytes, offset);
@@ -147,6 +150,8 @@ export function decodePayload(data: Uint8Array): HybridQRPayload | null {
   const version = view.getUint8(0);
 
   switch (version) {
+    case VERSION_HYBRID_FRTUN:
+      return decodeHybridFrtunPayload(data, view);
     case VERSION_HYBRID_LIBP2P:
       return decodeHybridLibp2pPayload(data, view);
     case VERSION_HYBRID:
@@ -159,7 +164,52 @@ export function decodePayload(data: Uint8Array): HybridQRPayload | null {
 }
 
 /**
- * Decode hybrid v3 payload (with libp2p peer ID)
+ * Decode hybrid v4 payload (with frtun peer ID)
+ */
+function decodeHybridFrtunPayload(data: Uint8Array, view: DataView): HybridQRPayload | null {
+  if (data.length < PAYLOAD_SIZES.HYBRID_LIBP2P_BASE) {
+    console.error(`Invalid v4 payload size: ${data.length}, expected at least ${PAYLOAD_SIZES.HYBRID_LIBP2P_BASE}`);
+    return null;
+  }
+
+  let offset = 1; // Skip version byte
+
+  const classicalPublicKey = data.slice(offset, offset + KEY_SIZES.CLASSICAL_PUBLIC_KEY);
+  offset += KEY_SIZES.CLASSICAL_PUBLIC_KEY;
+
+  const pqPublicKey = data.slice(offset, offset + KEY_SIZES.PQ_PUBLIC_KEY);
+  offset += KEY_SIZES.PQ_PUBLIC_KEY;
+
+  const nonce = data.slice(offset, offset + PAYLOAD_SIZES.NONCE);
+  offset += PAYLOAD_SIZES.NONCE;
+
+  const timestamp = view.getFloat64(offset, true);
+  offset += PAYLOAD_SIZES.TIMESTAMP;
+
+  // Read peer ID
+  const peerIdLength = view.getUint8(offset);
+  offset += 1;
+
+  if (data.length < offset + peerIdLength) {
+    console.error(`Invalid v4 payload: truncated peer ID`);
+    return null;
+  }
+
+  const peerIdBytes = data.slice(offset, offset + peerIdLength);
+  const frtunPeerId = new TextDecoder().decode(peerIdBytes);
+
+  return {
+    version: VERSION_HYBRID_FRTUN,
+    classicalPublicKey,
+    pqPublicKey,
+    nonce,
+    timestamp,
+    frtunPeerId,
+  };
+}
+
+/**
+ * Decode hybrid v3 payload (with libp2p peer ID) - deprecated but kept for compatibility
  */
 function decodeHybridLibp2pPayload(data: Uint8Array, view: DataView): HybridQRPayload | null {
   if (data.length < PAYLOAD_SIZES.HYBRID_LIBP2P_BASE) {
@@ -342,9 +392,13 @@ export function getRemainingSeconds(payload: HybridQRPayload): number {
 
 /**
  * Check if payload is hybrid (post-quantum)
+ * Includes v2 (hybrid), v3 (hybrid + libp2p), and v4 (hybrid + frtun) payloads
  */
 export function isHybrid(payload: HybridQRPayload): boolean {
-  return payload.version === VERSION_HYBRID && payload.pqPublicKey.length > 0;
+  return (payload.version === VERSION_HYBRID ||
+    payload.version === VERSION_HYBRID_LIBP2P ||
+    payload.version === VERSION_HYBRID_FRTUN) &&
+    payload.pqPublicKey.length > 0;
 }
 
 /**
@@ -355,13 +409,30 @@ export function isLegacy(payload: HybridQRPayload): boolean {
 }
 
 /**
- * Check if payload has libp2p peer ID (v3 protocol)
+ * Check if payload has libp2p peer ID (v3 protocol) - deprecated
  * If true, reconnection via Circuit Relay is possible
  */
 export function hasLibp2pPeerId(payload: HybridQRPayload): boolean {
   return payload.version === VERSION_HYBRID_LIBP2P &&
     payload.libp2pPeerId !== undefined &&
     payload.libp2pPeerId.length > 0;
+}
+
+/**
+ * Check if payload has frtun peer ID (v4 protocol)
+ * If true, reconnection via frtun overlay network is possible
+ */
+export function hasFrtunPeerId(payload: HybridQRPayload): boolean {
+  return payload.version === VERSION_HYBRID_FRTUN &&
+    payload.frtunPeerId !== undefined &&
+    payload.frtunPeerId.length > 0;
+}
+
+/**
+ * Check if payload supports reconnection (either v3 or v4)
+ */
+export function supportsReconnection(payload: HybridQRPayload): boolean {
+  return hasFrtunPeerId(payload) || hasLibp2pPeerId(payload);
 }
 
 /**
@@ -378,9 +449,23 @@ export function isValid(payload: HybridQRPayload): boolean {
     return false;
   }
 
-  // Validate PQ key if hybrid
+  // Validate PQ key if hybrid (v2, v3, or v4)
   if (isHybrid(payload) && payload.pqPublicKey.length !== KEY_SIZES.PQ_PUBLIC_KEY) {
     return false;
+  }
+
+  // Validate peer ID for v3 (libp2p)
+  if (payload.version === VERSION_HYBRID_LIBP2P && payload.libp2pPeerId !== undefined) {
+    if (payload.libp2pPeerId.length > PAYLOAD_SIZES.MAX_PEER_ID) {
+      return false;
+    }
+  }
+
+  // Validate peer ID for v4 (frtun)
+  if (payload.version === VERSION_HYBRID_FRTUN && payload.frtunPeerId !== undefined) {
+    if (payload.frtunPeerId.length > PAYLOAD_SIZES.MAX_PEER_ID) {
+      return false;
+    }
   }
 
   return true;

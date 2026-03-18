@@ -54,18 +54,8 @@ import { WebRTCChannel } from '../crypto/WebRTCChannel';
 import { generateSafetyNumber, formatSafetyNumber } from '../crypto/SafetyNumber';
 // getCombinedPublicKey removed - we use only classical keys for safety numbers
 
-// libp2p reconnection imports
-import {
-  initializeNode,
-  startNode,
-  getNode,
-  dialPeer,
-  getPeerIdString,
-} from '../libp2p/node';
-import {
-  sendOfferAndReceiveAnswer,
-  setupSignalingHandler,
-} from '../libp2p/signaling';
+// frtun overlay network imports
+import { getFrtunClient, ensureFrtunConnected, TIMEOUTS } from '../frtun';
 
 export interface Message {
   id: string;
@@ -85,10 +75,10 @@ export type SessionState =
   | 'connecting'            // WebRTC handshake in progress
   | 'active'                // Session established
   | 'error'                 // Error state
-  // Reconnection states (libp2p Circuit Relay)
-  | 'reconnecting_relay'    // Connecting to libp2p relay network
-  | 'reconnecting_peer'     // Dialing peer via relay circuit
-  | 'reconnecting_signaling' // Exchanging SDP via libp2p signaling
+  // Reconnection states (frtun overlay network)
+  | 'reconnecting_overlay'  // Connecting to frtun relay network
+  | 'reconnecting_stream'   // Opening stream to peer
+  | 'reconnecting_handshake' // Exchanging session keys
   | 'reconnecting_webrtc';  // Establishing direct WebRTC
 
 // Role in the handshake
@@ -110,7 +100,7 @@ interface SessionStore {
   safetyNumberVerified: boolean;      // Whether user has verified the safety number
   iceDiagnostics: IceDiagnostics | null;  // ICE connection diagnostics for debugging
   reconnectionProgress: string | null;    // Human-readable reconnection status
-  peerLibp2pPeerId: string | null;        // Peer's libp2p peer ID for reconnection
+  peerFrtunPeerId: string | null;         // Peer's frtun peer ID for reconnection
 
   // Internal (not exposed directly)
   _keyPair: HybridKeyPairData | null;
@@ -134,18 +124,16 @@ interface SessionStore {
   // Safety number verification
   verifySafetyNumber: () => void;
 
-  // Reconnection via libp2p Circuit Relay
+  // Reconnection via frtun overlay network
   initiateReconnection: (
     contactId: string,
     peerPublicKey: Uint8Array,
-    libp2pPeerId: string,
-    libp2pMultiaddrs?: string[]
+    frtunPeerId: string
   ) => Promise<boolean>;
   handleIncomingReconnection: (
     peerId: string,
     offer: RTCSessionDescriptionInit
   ) => Promise<RTCSessionDescriptionInit>;
-  reconnectionProgress: string | null;  // Human-readable status
 
   // Legacy (kept for compatibility)
   completeSession: (answerJson: string) => Promise<void>;
@@ -173,7 +161,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   safetyNumberVerified: false,
   iceDiagnostics: null,
   reconnectionProgress: null,
-  peerLibp2pPeerId: null,
+  peerFrtunPeerId: null,
 
   _keyPair: null,
   _peerPublicKeys: null,
@@ -193,11 +181,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Generate hybrid key pair
       const keyPair = await generateHybridKeyPair();
 
-      // Get libp2p peer ID for reconnection capability (if available)
-      const libp2pPeerId = getPeerIdString() ?? undefined;
+      // Get frtun peer ID for reconnection capability (if available)
+      const frtunClient = getFrtunClient();
+      const frtunPeerId = frtunClient.getPeerName() ?? undefined;
 
-      // Generate QR payload (v3 if we have peer ID, v2 otherwise)
-      const payload = generateQRPayload(keyPair.publicKey, libp2pPeerId);
+      // Generate QR payload (v4 if we have frtun peer ID, v2 otherwise)
+      const payload = generateQRPayload(keyPair.publicKey, frtunPeerId);
 
       // Encode for QR display (full hybrid payload with quantum-resistant keys)
       const qrString = encodeToCompressedBase64(payload);
@@ -305,8 +294,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // We use only classical keys for safety numbers since that's what both sides have
       const peerPublicKeys = payload.classicalPublicKey;
 
-      // Capture peer's libp2p peer ID if present (v3 payload)
-      const peerLibp2pPeerId = payload.libp2pPeerId ?? null;
+      // Capture peer's frtun peer ID if present (v4 payload) or libp2p peer ID (v3 payload)
+      const peerFrtunPeerId = payload.frtunPeerId ?? payload.libp2pPeerId ?? null;
 
       // Initialize WebRTC as initiator (Bob creates the offer)
       const webrtc = new WebRTCChannel({
@@ -362,7 +351,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         _webrtc: webrtc,
         signalingQrString: offerQr,
         isQuantumSecure: true,
-        peerLibp2pPeerId,  // Store peer's libp2p peer ID for reconnection
+        peerFrtunPeerId,  // Store peer's frtun peer ID for reconnection
       });
 
       return { offerQr };
@@ -608,55 +597,83 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
-   * Initiate reconnection to a contact via libp2p Circuit Relay
+   * Initiate reconnection to a contact via frtun overlay network
    * This is the zero-code reconnection flow - no QR exchange needed
    *
    * @param contactId - Contact's ID in the identity store
    * @param peerPublicKey - Contact's X25519 public key (for session key derivation)
-   * @param libp2pPeerId - Contact's libp2p peer ID (e.g., "12D3KooW...")
-   * @param libp2pMultiaddrs - Optional: Last known relay addresses for faster dial
+   * @param frtunPeerId - Contact's frtun peer ID (e.g., "frtun1xxx.peer")
    */
   initiateReconnection: async (
-    contactId: string,
+    _contactId: string,
     peerPublicKey: Uint8Array,
-    libp2pPeerId: string,
-    libp2pMultiaddrs?: string[]
+    frtunPeerId: string
   ) => {
     set({
-      state: 'reconnecting_relay',
+      state: 'reconnecting_overlay',
       error: null,
-      reconnectionProgress: 'Connecting to relay network...',
+      reconnectionProgress: 'Connecting to overlay network...',
     });
 
     try {
-      // Step 1: Ensure libp2p node is running
-      const node = getNode();
-      if (!node) {
-        throw new Error('libp2p not initialized - please restart the app');
-      }
+      // Step 1: Ensure frtun client is connected
+      const frtunClient = await ensureFrtunConnected();
+      const client = frtunClient.getClient();
 
-      if (node.status !== 'listening') {
-        set({ reconnectionProgress: 'Starting relay connection...' });
-        await startNode();
+      if (!client) {
+        throw new Error('frtun not initialized - please restart the app');
       }
 
       // Step 2: Generate our session key pair for this reconnection
       set({ reconnectionProgress: 'Generating session keys...' });
       const ourKeyPair = await generateHybridKeyPair();
 
-      // Step 3: Dial the peer via relay
+      // Step 3: Open stream to peer via frtun relay
       set({
-        state: 'reconnecting_peer',
-        reconnectionProgress: `Dialing ${libp2pPeerId.slice(0, 16)}...`,
+        state: 'reconnecting_stream',
+        reconnectionProgress: `Opening stream to ${frtunPeerId.slice(0, 16)}...`,
       });
 
-      const relayAddr = libp2pMultiaddrs?.[0]; // Use first known relay addr
-      await dialPeer(libp2pPeerId, relayAddr);
+      const stream = await Promise.race([
+        client.openTcpStream(frtunPeerId, 443),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Stream timeout')), TIMEOUTS.STREAM_OPEN)
+        ),
+      ]);
 
-      // Step 4: Create WebRTC connection
+      // Step 4: Exchange session parameters via stream
       set({
-        state: 'reconnecting_signaling',
-        reconnectionProgress: 'Exchanging connection data...',
+        state: 'reconnecting_handshake',
+        reconnectionProgress: 'Exchanging session parameters...',
+      });
+
+      // Send reconnection request with our classical public key
+      const request = {
+        type: 'reconnect',
+        publicKey: Array.from(ourKeyPair.publicKey.classical),
+      };
+      await stream.write(new TextEncoder().encode(JSON.stringify(request)));
+
+      // Read response with peer's SDP offer
+      const responseBytes = await Promise.race([
+        stream.read(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Handshake timeout')), TIMEOUTS.HANDSHAKE)
+        ),
+      ]);
+      if (!responseBytes) {
+        throw new Error('No response received from peer');
+      }
+      const response = JSON.parse(new TextDecoder().decode(responseBytes));
+
+      if (response.type !== 'reconnect_response') {
+        throw new Error('Invalid reconnection response');
+      }
+
+      // Step 5: Create WebRTC connection
+      set({
+        state: 'reconnecting_webrtc',
+        reconnectionProgress: 'Establishing secure connection...',
       });
 
       const webrtc = new WebRTCChannel({
@@ -692,20 +709,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const offerJson = await webrtc.initAsInitiator();
       const offerData = JSON.parse(offerJson);
 
-      // Step 5: Exchange SDP via libp2p signaling
-      set({
-        state: 'reconnecting_webrtc',
-        reconnectionProgress: 'Establishing secure connection...',
-      });
+      // Send SDP offer via stream
+      await stream.write(new TextEncoder().encode(JSON.stringify({
+        type: 'sdp_offer',
+        sdp: offerData.sdp,
+      })));
 
-      const sdpAnswer = await sendOfferAndReceiveAnswer(
-        libp2pPeerId,
-        relayAddr,
-        { type: 'offer', sdp: offerData.sdp }
-      );
+      // Receive SDP answer
+      const answerBytes = await stream.read();
+      if (!answerBytes) {
+        throw new Error('No SDP answer received');
+      }
+      const answerData = JSON.parse(new TextDecoder().decode(answerBytes));
+
+      if (answerData.type !== 'sdp_answer') {
+        throw new Error('Invalid SDP answer');
+      }
 
       // Complete WebRTC connection with answer
-      const answerJson = JSON.stringify(sdpAnswer);
+      const answerJson = JSON.stringify({ type: 'answer', sdp: answerData.sdp });
       await webrtc.completeConnection(answerJson);
 
       // Derive session key using hybrid key exchange
@@ -723,6 +745,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         isQuantumSecure: false, // Reconnection uses classical keys only
       });
 
+      // Close the frtun stream (WebRTC takes over)
+      stream.close();
+
       return true;
     } catch (error) {
       console.error('[reconnection] Failed:', error);
@@ -736,10 +761,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   /**
-   * Handle incoming reconnection request (when someone dials us via libp2p)
-   * This is called by the signaling handler when we receive an SDP offer
+   * Handle incoming reconnection request (when someone connects via frtun stream)
+   * This is called when we receive a reconnection request via frtun stream handler
    *
-   * @param peerId - The peer ID of the caller
+   * @param peerId - The frtun peer ID of the caller
    * @param offer - The SDP offer from the caller
    * @returns The SDP answer to send back
    */
@@ -748,7 +773,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     offer: RTCSessionDescriptionInit
   ) => {
     set({
-      state: 'reconnecting_signaling',
+      state: 'reconnecting_handshake',
       reconnectionProgress: `Incoming connection from ${peerId.slice(0, 16)}...`,
     });
 
@@ -834,7 +859,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       safetyNumberVerified: false,
       iceDiagnostics: null,
       reconnectionProgress: null,
-      peerLibp2pPeerId: null,
+      peerFrtunPeerId: null,
       _keyPair: null,
       _peerPublicKeys: null,
       _sessionKey: null,

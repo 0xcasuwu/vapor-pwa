@@ -35,7 +35,7 @@ export function Chat({ onEndSession }: ChatProps) {
     safetyNumberVerified,
     verifySafetyNumber,
     _peerPublicKeys,
-    peerLibp2pPeerId,
+    peerFrtunPeerId,
   } = useSessionStore();
 
   const { addContact, getContactByPublicKey } = useIdentityStore();
@@ -82,9 +82,9 @@ export function Chat({ onEndSession }: ChatProps) {
     if (!_peerPublicKeys || !contactNickname.trim()) return;
 
     try {
-      // Include peer's libp2p peer ID if available (enables zero-code reconnection)
+      // Include peer's frtun peer ID if available (enables zero-code reconnection)
       await addContact(_peerPublicKeys, contactNickname.trim(), {
-        libp2pPeerId: peerLibp2pPeerId ?? undefined,
+        frtunPeerId: peerFrtunPeerId ?? undefined,
       });
       setContactSaved(true);
       setShowSaveContact(false);

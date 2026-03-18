@@ -191,8 +191,8 @@ function ContactItem({
     return `${Math.floor(diff / 86400000)}d`;
   };
 
-  // Check if contact supports zero-code reconnection
-  const canReconnect = contact.libp2pPeerId && contact.libp2pPeerId.length > 0;
+  // Check if contact supports zero-code reconnection (frtun peer ID)
+  const canReconnect = contact.frtunPeerId && contact.frtunPeerId.length > 0;
 
   const handleClick = () => {
     if (canReconnect && onReconnect) {

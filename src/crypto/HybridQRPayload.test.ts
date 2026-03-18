@@ -123,8 +123,8 @@ describe('HybridQRPayload', () => {
       const keyPair = await generateHybridKeyPair();
       const payload = generateQRPayload(keyPair.publicKey);
 
-      // Manually set timestamp to 2 minutes ago
-      payload.timestamp = (Date.now() / 1000) - 120;
+      // Set timestamp beyond DEFAULT_EXPIRY_SECONDS (3600s = 1 hour)
+      payload.timestamp = (Date.now() / 1000) - 7200; // 2 hours ago
 
       expect(isExpired(payload)).toBe(true);
     });
@@ -134,15 +134,17 @@ describe('HybridQRPayload', () => {
       const payload = generateQRPayload(keyPair.publicKey);
 
       const remaining = getRemainingSeconds(payload);
-      expect(remaining).toBeGreaterThan(55); // Should be close to 60
-      expect(remaining).toBeLessThanOrEqual(60);
+      // DEFAULT_EXPIRY_SECONDS is 3600 (1 hour)
+      expect(remaining).toBeGreaterThan(3595);
+      expect(remaining).toBeLessThanOrEqual(3600);
     });
 
     it('getRemainingSeconds returns 0 for expired payload', async () => {
       const keyPair = await generateHybridKeyPair();
       const payload = generateQRPayload(keyPair.publicKey);
 
-      payload.timestamp = (Date.now() / 1000) - 120;
+      // Set timestamp beyond DEFAULT_EXPIRY_SECONDS (3600s)
+      payload.timestamp = (Date.now() / 1000) - 7200; // 2 hours ago
 
       expect(getRemainingSeconds(payload)).toBe(0);
     });
